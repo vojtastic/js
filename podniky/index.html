@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPR Praha – podniky</title>
+
+    <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
+    <script src="https://js.arcgis.com/4.30/"></script>
+
+    <style>
+        /* =========================================================================
+           DESIGN SYSTEM - FF UNIT PRO LOCAL FONTS & GLOBALS
+           ========================================================================= */
+        @font-face { font-family: 'FF Unit Pro'; src: url('FFUnitPro-Regular-Cshv8aFV.woff2') format('woff2'); font-weight: normal; font-style: normal; }
+        @font-face { font-family: 'FF Unit Pro'; src: url('FFUnitPro-Bold-CNBz0ahQ.woff2') format('woff2'); font-weight: bold; font-style: normal; }
+
+        :root {
+            --calcite-font-family: 'FF Unit Pro' !important;
+            --calcite-sans-family: 'FF Unit Pro' !important;
+        }
+
+        *, *::before, *::after { font-family: 'FF Unit Pro' !important; }
+
+        html, body, #viewDiv {
+            padding: 0; margin: 0; height: 100%; width: 100%;
+            overflow: hidden; position: relative;
+        }
+
+        /* =========================================================================
+           SHARED UI COMPONENTS & WIDGETS
+           ========================================================================= */
+        .widget-box {
+            background: #ffffff; padding: 8px 18px; border-radius: 30px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); cursor: pointer;
+            font-size: 13px; font-weight: bold; color: #1e293b; user-select: none;
+            border: 1px solid #e2e8f0; transition: all 0.2s;
+        }
+        .widget-box:hover { background: #f8fafc; color: #2563eb; }
+
+        .flex-center { display: flex; align-items: center; justify-content: center; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+
+        /* =========================================================================
+           OVERLAYS & LABELS
+           ========================================================================= */
+        #loadingOverlay {
+            position: fixed; inset: 0; background: #ffffff; z-index: 1000;
+            flex-direction: column; font-weight: bold; color: #1e293b; transition: opacity 0.4s;
+        }
+
+        #htmlLabelOverlay {
+            position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+        }
+
+        .map-label {
+            position: absolute; top: 0; left: 0; font-weight: bold; white-space: nowrap; 
+            border-radius: 30px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .map-restaurant-label { color: #1e293b; background: rgba(255, 255, 255, 0.92); padding: 4px 10px; font-size: 11px; border: 1px solid #e2e8f0; }
+        .map-path-label { color: #ffffff; background: #0f172a; border: 1.5px solid #ffffff; padding: 5px 12px; font-size: 12px; }
+
+        /* =========================================================================
+           BUTTONS & HINTS
+           ========================================================================= */
+        .add-restaurant-btn {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background-color: #2563eb; color: #ffffff !important; padding: 14px 28px; 
+            border-radius: 30px; font-size: 15px; font-weight: bold; z-index: 150; 
+            border: none; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3); display: flex; align-items: center; gap: 8px;
+        }
+        .add-restaurant-btn:hover { background-color: #1d4ed8; transform: translate(-50%, -2px); }
+        .add-restaurant-btn:active { transform: translate(-50%, 1px); }
+
+        .pick-location-hint {
+            display: none; position: fixed; top: 30px; left: 50%; transform: translateX(-50%);
+            background-color: #f59e0b; color: #ffffff; padding: 12px 24px; border-radius: 30px;
+            font-size: 14px; font-weight: bold; box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
+            z-index: 200; cursor: pointer; text-align: center; user-select: none; border: 2px solid #d97706;
+        }
+        .pick-location-hint:hover { background-color: #d97706; }
+
+        /* =========================================================================
+           TOOLS & WIDGETS
+           ========================================================================= */
+        .basemap-toggle-widget { margin: 0 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important; background: #ffffff !important; }
+        
+        .tools-widget-container { margin: 8px 0 0 0 !important; background: transparent !important; box-shadow: none !important; pointer-events: none; }
+        .tools-widget-container.expanded { width: 240px; }
+        .tools-widget-container > div { pointer-events: auto; }
+        
+        .tools-toggle-btn { width: max-content; box-sizing: border-box; text-align: center; margin-left: auto; }
+        .tools-widget-container.expanded .tools-toggle-btn { width: 100%; margin-left: 0; }
+        
+        .filter-panel {
+            background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px); padding: 16px 20px; 
+            border-radius: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-top: 8px; 
+            width: 100%; box-sizing: border-box; border: 1px solid #e2e8f0; user-select: none;
+        }
+        
+        .style-toggle-btn {
+            background: #f8fafc; padding: 10px; border-radius: 30px; cursor: pointer; font-size: 13px; 
+            font-weight: bold; color: #1e293b; text-align: center; transition: all 0.2s; border: 1px solid #e2e8f0;
+        }
+        .style-toggle-btn:hover { background: #e2e8f0; color: #2563eb; }
+
+        .filter-header { margin-bottom: 5px; }
+        .filter-label { font-weight: bold; font-size: 13px; color: #1e293b; }
+        
+        .reset-slider-btn { 
+            background: #ffffff; border: 1px solid #e2e8f0; cursor: pointer; color: #64748b; font-size: 14px; 
+            width: 24px; height: 24px; border-radius: 50%; font-weight: bold; transition: all 0.2s; 
+        }
+        .reset-slider-btn:hover { background: #f1f5f9; color: #2563eb; }
+        .reset-slider-btn:active { transform: scale(0.9); }
+
+        /* =========================================================================
+           ARCGIS UI ADJUSTMENTS
+           ========================================================================= */
+        .esri-zoom.esri-widget { background: transparent !important; box-shadow: none !important; margin: 0 !important; }
+        .esri-zoom .esri-widget--button {
+            border-radius: 30px !important; margin-bottom: 8px !important; border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important; background-color: #ffffff !important;
+            width: 38px !important; height: 38px !important; color: #1e293b !important;
+        }
+        .esri-zoom .esri-widget--button:last-child { margin-bottom: 0 !important; }
+        .esri-zoom .esri-widget--button:hover { background-color: #f8fafc !important; color: #2563eb !important; }
+        .esri-zoom .esri-widget--button::after, .esri-zoom .esri-widget--button::before { display: none !important; }
+
+        .esri-slider { background: transparent !important; margin-top: 8px; margin-bottom: 24px !important; }
+        .esri-slider__track { height: 6px !important; border-radius: 3px !important; background-color: #e2e8f0 !important; }
+        .esri-slider__segment--interactive { background-color: #2563eb !important; }
+        .esri-slider__thumb {
+            border: 2px solid #2563eb !important; background-color: #ffffff !important;
+            width: 16px !important; height: 16px !important; border-radius: 50% !important; 
+            top: -5px !important; transition: none !important; transform: scale(1) !important; 
+        }
+        .esri-slider__label { font-family: 'FF Unit Pro' !important; font-weight: bold !important; font-size: 11px !important; color: #475569 !important; top: 14px !important; margin-top: 0 !important; }
+        .esri-slider__tick { display: none !important; }
+
+        /* =========================================================================
+           SIDE PANEL & DETAILS
+           ========================================================================= */
+        .side-panel {
+            position: fixed; top: 0; right: 0; width: 360px; height: 100%;
+            background-color: #ffffff; box-shadow: -4px 0 25px rgba(15, 23, 42, 0.15);
+            z-index: 100; display: flex; flex-direction: column;
+            transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .side-panel.open { transform: translateX(0); }
+        @media (max-width: 600px) { .side-panel { width: 100%; } }
+        
+        .panel-header { padding: 24px 20px 12px 20px; position: relative; }
+        .panel-title { font-size: 22px; font-weight: bold; color: #0f172a; margin: 0; padding-right: 30px; line-height: 1.3; }
+        .panel-body { padding: 0 20px 24px 20px; overflow-y: auto; flex-grow: 1; }
+        
+        .close-btn {
+            position: absolute; top: 20px; right: 20px; background: #f1f5f9; border: none;
+            font-size: 20px; font-weight: bold; color: #64748b; cursor: pointer;
+            width: 32px; height: 32px; border-radius: 50%; z-index: 10;
+        }
+        .close-btn:hover { background: #e2e8f0; color: #0f172a; }
+
+        /* Ratings & Stats */
+        .rating-container { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; }
+        .rating-row { background: #f8fafc; padding: 8px 16px; border-radius: 30px; border: 1px solid #f1f5f9; }
+        .rating-label { font-weight: bold; color: #475569; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .meter-wrapper { display: flex; align-items: center; gap: 12px; }
+        
+        .visual-meter { font-size: 1.3rem; line-height: 1; color: #e2e8f0; position: relative; user-select: none; display: inline-block; }
+        .visual-meter-stars { font-family: 'FF Unit Pro' !important; }
+        .visual-meter-prices { font-weight: bold; letter-spacing: 1px; }
+        .visual-meter-filled { position: absolute; top: 0; left: 0; overflow: hidden; white-space: nowrap; }
+        .stars-filled { color: #f59e0b; }
+        .prices-filled { color: #10b981; }
+        
+        .distance-badge { color: #2563eb; font-weight: bold; font-size: 13px; background: #eff6ff; border: 1px solid #bfdbfe; padding: 3px 10px; border-radius: 30px; }
+        .numeric-box { font-size: 11px; font-weight: bold; color: #0f172a; background: #e2e8f0; padding: 2px 8px; border-radius: 30px; min-width: 22px; text-align: center; }
+
+        /* Link Buttons */
+        .action-btn {
+            display: block; text-align: center; color: #ffffff !important; padding: 12px; 
+            border-radius: 30px; font-weight: bold; font-size: 14px; text-decoration: none; 
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .submit-rating-btn { background-color: #2563eb; margin: 4px 0 2px 0; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); }
+        .submit-rating-btn:hover { background-color: #1d4ed8; }
+        .menu-link-btn { background-color: #0f172a; margin: 2px 0 4px 0; box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.2); box-sizing: border-box; }
+        .menu-link-btn:hover { background-color: #334155; }
+        .action-btn:active { transform: scale(0.98); }
+        .menu-link-btn.disabled { background-color: #e2e8f0 !important; color: #94a3b8 !important; cursor: not-allowed; pointer-events: none; box-shadow: none !important; }
+
+        /* Reviews Accordion */
+        .review-count-badge { font-size: 13px; color: #2563eb; font-weight: bold; margin-top: 6px; text-align: right; cursor: pointer; user-select: none; align-self: flex-end; }
+        .review-count-badge:hover { text-decoration: underline; }
+
+        .reviews-panel { display: none; flex-direction: column; gap: 10px; margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 14px; }
+        .reviews-panel.visible { display: flex; }
+        
+        .individual-review-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 24px; padding: 16px; }
+        .review-stars-mini { color: #f59e0b; font-family: 'FF Unit Pro' !important; font-size: 1.1rem; letter-spacing: 1px; }
+        .review-prices-mini { color: #10b981; font-weight: bold; font-size: 11px; }
+        .review-card-comment { font-size: 13px; color: #334155; line-height: 1.4; font-style: italic; word-break: break-word; margin-top: 6px; }
+        
+        .loading-text { color: #64748b; font-style: italic; text-align: center; padding: 40px 0; }
+    </style>
+</head>
+<body>
+
+    <div id="loadingOverlay" class="flex-center">
+        <div style="font-size: 1.6rem; letter-spacing: -0.5px;">🔄 Načítání...</div>
+    </div>
+
+    <!-- Unified Collapsible Tools Widget -->
+    <div id="toolsWidget" class="tools-widget-container">
+        <div id="toolsToggleBtn" class="widget-box tools-toggle-btn">🛠️ Nástroje a filtry</div>
+        
+        <div id="toolsPanel" class="filter-panel" style="display: none;">
+            <div id="styleToggleBtn" class="style-toggle-btn">🎨 Barvy: Výchozí</div>
+            <div style="height: 16px;"></div>
+            
+            <div class="flex-between filter-header">
+                <label class="filter-label">⭐ Filtr hodnocení</label>
+                <button class="reset-slider-btn flex-center" id="resetRatingBtn" title="Obnovit výchozí">↺</button>
+            </div>
+            <div id="ratingSliderDiv"></div>
+            
+            <div style="height: 6px;"></div> 
+            
+            <div class="flex-between filter-header">
+                <label class="filter-label">💵 Filtr cen</label>
+                <button class="reset-slider-btn flex-center" id="resetPriceBtn" title="Obnovit výchozí">↺</button>
+            </div>
+            <div id="priceSliderDiv"></div>
+        </div>
+    </div>
+
+    <div id="pickLocationHint" class="pick-location-hint">
+        📍 Klikněte do mapy pro umístění podniku<br>
+        <span style="font-size: 0.85em; font-weight: normal;">(klikněte sem pro zrušení výběru)</span>
+    </div>
+
+    <!-- Map Container -->
+    <div id="viewDiv"></div>
+    <div id="htmlLabelOverlay"></div>
+
+    <button id="addRestaurantBtn" class="add-restaurant-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        Přidat nový podnik
+    </button>
+
+    <!-- Side Panel -->
+    <div id="restaurantPanel" class="side-panel">
+        <button id="closePanelBtn" class="close-btn flex-center">&times;</button>
+        <div class="panel-header">
+            <h2 id="panelTitle" class="panel-title">Název podniku</h2>
+        </div>
+        <div id="panelBody" class="panel-body"></div>
+    </div>
+
+    <script>
+        require([
+            "esri/Map", "esri/views/MapView", "esri/layers/FeatureLayer", 
+            "esri/layers/VectorTileLayer", "esri/layers/TileLayer", "esri/layers/GraphicsLayer", 
+            "esri/Graphic", "esri/layers/MediaLayer", "esri/layers/support/ImageElement", 
+            "esri/layers/support/ExtentAndRotationGeoreference", "esri/geometry/Extent", 
+            "esri/widgets/Slider", "esri/geometry/geometryEngine", "esri/core/reactiveUtils"
+        ], function(Map, MapView, FeatureLayer, VectorTileLayer, TileLayer, GraphicsLayer, Graphic, MediaLayer, ImageElement, ExtentAndRotationGeoreference, Extent, Slider, geometryEngine, reactiveUtils) {
+
+            // =========================================================================
+            // CONFIGURATION & CONSTANTS
+            // =========================================================================
+            
+            const URLS = {
+                RESTAURANTS: "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/survey123_7dae6166a1aa431e8a7c3e7abb65ebbb_results/FeatureServer/0",
+                RATINGS: "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/survey123_63118db7a95340ce86f8537969770efb_results/FeatureServer/0",
+                PATHS: "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/podniky_paths_view/FeatureServer/0"
+            };
+
+            const FIELDS = {
+                TITLE: "podnik_nazev", LINK: "podnik_nazev", RATING: "celkove_hodnoceni", 
+                PRICE: "cenova_kategorie", COMMENT: "komentar", MENU: "poledni_menu_link"
+            };
+
+            const SVGS = {
+                CUTLERY: "M2 2v7a3 3 0 0 0 3 3h1v8h2v-8h1a3 3 0 0 0 3-3V2h-2v5H8V2H6v5H4V2H2zm13 0v10h1v8h2v-8h2V2a4 4 0 0 0-4 4z",
+                STAR: "M12,1.5 c0.3,-0.9,1.7,-0.9,2,0 l2.1,6.5 c0.1,0.4,0.5,0.7,1,0.7 h6.8 c1,0,1.4,1.3,0.6,1.9 l-5.5,4 c-0.4,0.3,-0.6,0.8,-0.4,1.3 l2.1,6.5 c0.3,0.9,-0.8,1.6,-1.5,1.1 l-5.5,-4 c-0.4,-0.3,-1,-0.3,-1.4,0 l-5.5,4 c-0.8,0.5,-1.8,-0.2,-1.5,-1.1 l2.1,-6.5 c0.1,-0.5,-0.1,-1,-0.4,-1.3 l-5.5,-4 c-0.8,-0.6,-0.4,-1.9,0.6,-1.9 h6.8 c0.4,0,0.8,-0.3,1,-0.7 Z"
+            };
+
+            const DOM = {
+                overlay: document.getElementById('htmlLabelOverlay'),
+                loading: document.getElementById('loadingOverlay'),
+                toolsWidget: document.getElementById('toolsWidget'),
+                toolsPanel: document.getElementById('toolsPanel'),
+                toolsToggle: document.getElementById('toolsToggleBtn'),
+                styleToggle: document.getElementById('styleToggleBtn'),
+                pickHint: document.getElementById('pickLocationHint'),
+                panel: document.getElementById('restaurantPanel'),
+                panelTitle: document.getElementById('panelTitle'),
+                panelBody: document.getElementById('panelBody')
+            };
+
+            const state = {
+                reviewsCache: {}, labelsData: [], features: [],
+                activePathLabel: null, activeGraphic: null,
+                isPickingLocation: false, styleMode: 'default'
+            };
+            
+            let map, view, clientLayer, activePathLayer, ratingSlider, priceSlider;
+
+            document.fonts.ready.then(initApp);
+
+            function initApp() {
+                const baseLayer1 = new VectorTileLayer({ url: "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/zakladni_mapa_WGS/VectorTileServer" });
+                const baseLayer2 = new TileLayer({ url: "https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer", visible: false, maxScale: 0 });
+                activePathLayer = new GraphicsLayer(); // Path layer
+                
+                map = new Map({ layers: [baseLayer2, baseLayer1] });
+                
+                view = new MapView({
+                    container: "viewDiv", 
+                    map: map, 
+                    center: [14.417731, 50.07309], 
+                    zoom: 18, 
+                    constraints: { minZoom: 16, maxZoom: 20, snapToZoom: true }
+                });
+                
+                view.popup.autoOpenEnabled = false;
+
+                view.when(() => {
+                    const viewRoot = view.container.querySelector('.esri-view-root');
+                    const esriUI = view.container.querySelector('.esri-ui');
+                    // HTML Overlay sits directly on top of the webgl canvas but underneath controls
+                    if (viewRoot && esriUI && DOM.overlay) viewRoot.insertBefore(DOM.overlay, esriUI);
+                });
+
+                const basemapToggleBtn = document.createElement("div");
+                basemapToggleBtn.className = "widget-box basemap-toggle-widget";
+                basemapToggleBtn.innerHTML = "🗺️ Ortofoto";
+                basemapToggleBtn.addEventListener("click", () => {
+                    const isOrto = baseLayer2.visible = !baseLayer2.visible;
+                    baseLayer1.visible = !isOrto;
+                    basemapToggleBtn.innerHTML = isOrto ? "🗺️ Základní mapa" : "🗺️ Ortofoto";
+                });
+                view.ui.add(basemapToggleBtn, "top-right");
+
+                view.ui.add(DOM.toolsWidget, "top-right");
+
+                DOM.toolsToggle.addEventListener("click", () => {
+                    const isHidden = DOM.toolsPanel.style.display === "none";
+                    DOM.toolsPanel.style.display = isHidden ? "block" : "none";
+                    DOM.toolsToggle.innerHTML = isHidden ? "🛠️ Skrýt nástroje" : "🛠️ Nástroje a filtry";
+                    DOM.toolsWidget.classList.toggle("expanded", isHidden);
+                });
+
+                DOM.styleToggle.addEventListener("click", () => {
+                    const modes = { 'default': 'rating', 'rating': 'price', 'price': 'default' };
+                    const labels = { 'default': 'Výchozí', 'rating': 'Hodnocení', 'price': 'Ceny' };
+                    state.styleMode = modes[state.styleMode];
+                    DOM.styleToggle.innerHTML = `🎨 Barvy: ${labels[state.styleMode]}`;
+                    updateAllPointStyles();
+                });
+
+                const sliderConfig = { min: 1, max: 5, steps: 1, values: [1, 5], visibleElements: { labels: true, rangeLabels: false }, labelFormatFunction: v => v.toString() };
+                ratingSlider = new Slider({ container: "ratingSliderDiv", ...sliderConfig });
+                priceSlider = new Slider({ container: "priceSliderDiv", ...sliderConfig });
+
+                document.getElementById("resetRatingBtn").addEventListener("click", () => ratingSlider.values = [1, 5]);
+                document.getElementById("resetPriceBtn").addEventListener("click", () => priceSlider.values = [1, 5]);
+
+                reactiveUtils.watch(() => [ratingSlider.values[0], ratingSlider.values[1], priceSlider.values[0], priceSlider.values[1]], updateAllPointStyles);
+                reactiveUtils.watch(() => [view.extent, view.zoom], updateHtmlOverlayLabels);
+
+                initDynamicMapLayer();
+                bindUIEvents();
+            }
+
+            async function initDynamicMapLayer() {
+                const hRes = new FeatureLayer({ url: URLS.RESTAURANTS });
+                const hRat = new FeatureLayer({ url: URLS.RATINGS });
+                
+                try {
+                    const [pointRes, ratingsRes] = await Promise.all([
+                        hRes.queryFeatures({ where: "1=1", outFields: ["*"], returnGeometry: true }),
+                        hRat.queryFeatures({ where: "1=1", outFields: [FIELDS.LINK, FIELDS.RATING, FIELDS.PRICE, FIELDS.COMMENT] })
+                    ]);
+
+                    const ratingsDict = {};
+                    (ratingsRes.features || []).forEach(r => {
+                        const title = r.attributes[FIELDS.LINK]?.trim().toLowerCase();
+                        if (title) (ratingsDict[title] ??= []).push(r);
+                    });
+
+                    clientLayer = new GraphicsLayer(); // Points layer
+                    state.features = [];
+
+                    (pointRes.features || []).forEach((point, index) => {
+                        const title = point.attributes[FIELDS.TITLE] || "Neznámý podnik";
+                        const objId = point.getObjectId() || (index + 1);
+                        const matches = ratingsDict[title.trim().toLowerCase()] || [];
+                        
+                        let sumStars = 0, sumPrices = 0, countStars = 0, countPrices = 0, totalMatches = 0;
+                        let reviewsHtml = "";
+
+                        matches.forEach(m => {
+                            const r = Number(m.attributes[FIELDS.RATING]); 
+                            const p = m.attributes[FIELDS.PRICE] || 0; 
+                            const comment = m.attributes[FIELDS.COMMENT];
+
+                            const hasR = !isNaN(r) && m.attributes[FIELDS.RATING] !== null;
+                            const hasP = p > 0;
+                            const hasC = comment?.trim();
+
+                            if (!hasR && !hasP && !hasC) { totalMatches++; return; }
+
+                            if (hasR) { sumStars += r; countStars++; }
+                            if (hasP) { sumPrices += p; countPrices++; }
+                            totalMatches++;
+
+                            let headerHtml = "";
+                            if (hasR || hasP) {
+                                headerHtml = `<div class="review-card-header flex-between" style="${!hasR && hasP ? 'justify-content: flex-end;' : ''}">`;
+                                if (hasR) headerHtml += `<div class="review-stars-mini">${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</div>`;
+                                if (hasP) headerHtml += `<div class="review-prices-mini">${"$".repeat(Math.round(p))}</div>`;
+                                headerHtml += `</div>`;
+                            }
+                            
+                            const commentHtml = hasC ? `<div class="review-card-comment" style="${!headerHtml ? 'margin-top: 0;' : ''}">"${comment.trim()}"</div>` : "";
+                            reviewsHtml += `<div class="individual-review-card">${headerHtml}${commentHtml}</div>`;
+                        });
+
+                        const avgRating = countStars ? sumStars / countStars : 0;
+                        const avgPrice = countPrices ? sumPrices / countPrices : 0;
+
+                        // Save the specific counts in the cache to display in the UI later
+                        state.reviewsCache[objId] = {
+                            title, count: totalMatches, avgRating, avgPrice,
+                            hasStars: countStars > 0, hasPrices: countPrices > 0, 
+                            countStars, countPrices,
+                            reviewsHtml, originalObjectId: objId
+                        };
+
+                        point.attributes = {
+                            ...point.attributes, OBJECTID: objId, [FIELDS.TITLE]: title,
+                            calculated_stars: avgRating, calculated_prices: avgPrice,
+                            review_count: totalMatches, poledni_menu_link: point.attributes[FIELDS.MENU] || ""
+                        };
+                        state.features.push(point);
+                    });
+
+                    updateAllPointStyles();
+                    
+                    // Add layers in specific order to manage Z-index correctly
+                    setupStaticImageOverlays(); 
+                    map.add(activePathLayer); // Add Path layer underneath Point layer
+                    map.add(clientLayer);     // Points layer sits on top of paths
+
+                    DOM.loading.style.opacity = "0";
+                    setTimeout(() => DOM.loading.remove(), 400);
+                } catch (err) {
+                    console.error("Startup error:", err);
+                    DOM.loading.innerHTML = `<div style="color:#ef4444; padding: 20px; text-align:center;">⚠️ Chyba aplikace.<br><small>${err.message}</small></div>`;
+                }
+            }
+
+            function updateHtmlOverlayLabels() {
+                if (!clientLayer || !view) return;
+                let html = "";
+                const viewExtent = view.extent;
+                
+                if (view.zoom >= 16 && viewExtent) {
+                    state.labelsData.forEach(lbl => {
+                        if (viewExtent.contains(lbl.geometry)) {
+                            const sp = view.toScreen(lbl.geometry);
+                            if (sp) html += `<div class="map-label map-restaurant-label" style="transform: translate(calc(${sp.x}px - 50%), calc(${sp.y}px + 20px));">${lbl.text}</div>`;
+                        }
+                    });
+                }
+
+                if (state.activePathLabel) {
+                    const sp = view.toScreen(state.activePathLabel.geometry);
+                    if (sp) html += `<div class="map-label map-path-label" style="transform: translate(calc(${sp.x}px - 50%), calc(${sp.y}px - 50%));">${state.activePathLabel.text}</div>`;
+                }
+                DOM.overlay.innerHTML = html;
+            }
+
+            function getBackgroundColor(attr, mode) {
+                if (mode === 'default') return "#ffffff";
+                if (!attr.review_count) return "#e2e8f0"; // Missing data gets grey background
+                
+                const v = Math.round(attr[mode === 'rating' ? 'calculated_stars' : 'calculated_prices'] || 0);
+                
+                // 0: Grey, 1: Red, 2: Orange, 3: Yellow, 4: Lime, 5: Green
+                const colors = ["#e2e8f0", "#f87171", "#fb923c", "#facc15", "#a3e635", "#4ade80"];
+                
+                return colors[v] || "#4ade80";
+            }
+
+            function getRestaurantGraphics(geometry, attributes, isHighlight = false) {
+                const graphics = [];
+                
+                // If it is highlighted, this red halo will draw UNDER the point 
+                // because activePathLayer is below clientLayer in the map's drawing order
+                if (isHighlight) {
+                    graphics.push(new Graphic({ geometry, attributes, symbol: { type: "simple-marker", style: "circle", color: "#ef4444", size: 30, outline: null }}));
+                }
+                
+                graphics.push(new Graphic({
+                    geometry, attributes,
+                    symbol: { type: "simple-marker", style: "circle", color: getBackgroundColor(attributes, state.styleMode), size: 24, outline: { color: "#000000", width: 1.5 } }
+                }));
+
+                if (state.styleMode === 'default') {
+                    graphics.push(new Graphic({ geometry, attributes, symbol: { type: "simple-marker", path: SVGS.CUTLERY, color: "#000000", size: 13, outline: null } }));
+                } else if (attributes.review_count > 0) {
+                    const useStar = state.styleMode === 'rating';
+                    let n = Math.max(1, Math.min(5, Math.round(attributes[useStar ? 'calculated_stars' : 'calculated_prices'] || 0)));
+                    
+                    const radii = [0, 0, 4.5, 5.2, 5.8, 6.2];
+                    const sizes = useStar ? [0, 14, 9.5, 8, 7, 6] : [0, 14, 11, 9, 8.5, 7.5];
+                    
+                    for (let i = 0; i < n; i++) {
+                        const angle = (Math.PI / 2) + (i * 2 * Math.PI) / n;
+                        const xoffset = radii[n] * Math.cos(angle);
+                        const yoffset = radii[n] * Math.sin(angle);
+
+                        graphics.push(new Graphic({
+                            geometry, attributes,
+                            symbol: useStar 
+                                ? { type: "simple-marker", path: SVGS.STAR, color: "#000000", size: sizes[n], outline: null, xoffset, yoffset }
+                                : { type: "text", text: "$", color: "#000000", font: { size: sizes[n], weight: "bold", family: "FF Unit Pro" }, horizontalAlignment: "center", verticalAlignment: "middle", xoffset, yoffset }
+                        }));
+                    }
+                }
+                return graphics;
+            }
+
+            function updateAllPointStyles() {
+                if (!clientLayer) return;
+                const [rMin, rMax, pMin, pMax] = [...ratingSlider.values, ...priceSlider.values];
+
+                clientLayer.removeAll();
+                state.labelsData.length = 0;
+
+                state.features.forEach(point => {
+                    const attr = point.attributes;
+                    const isUnrated = attr.review_count === 0;
+                    const r = isUnrated ? 0 : Math.round(attr.calculated_stars || 0);
+                    const p = isUnrated ? 0 : Math.round(attr.calculated_prices || 0);
+
+                    const passRating = (rMin === 1 && rMax === 5) || (!isUnrated && r >= rMin && r <= rMax);
+                    const passPrice = (pMin === 1 && pMax === 5) || (!isUnrated && p >= pMin && p <= pMax);
+
+                    if (passRating && passPrice) {
+                        clientLayer.addMany(getRestaurantGraphics(point.geometry, attr, false));
+                        state.labelsData.push({ geometry: point.geometry, text: attr[FIELDS.TITLE] });
+                    }
+                });
+
+                if (state.activeGraphic) {
+                    if (!state.labelsData.some(lbl => lbl.geometry === state.activeGraphic.geometry)) {
+                        closeSidePanel(); 
+                    } else {
+                        const paths = activePathLayer.graphics.filter(g => g.geometry.type === "polyline");
+                        activePathLayer.removeAll();
+                        activePathLayer.addMany(paths);
+                        // Add highlight on top of the dashed path
+                        activePathLayer.addMany(getRestaurantGraphics(state.activeGraphic.geometry, state.activeGraphic.attributes, true));
+                    }
+                }
+                updateHtmlOverlayLabels();
+            }
+
+            function setupStaticImageOverlays() {
+                const dynamicImage2 = new ImageElement({
+                    image: "media_layer-02.png",
+                    georeference: new ExtentAndRotationGeoreference({
+                        extent: new Extent({ 
+                            xmin: 1604906.87, 
+                            ymin: 6458880.12, 
+                            xmax: 1605015.13, 
+                            ymax: 6459012.48, 
+                            spatialReference: view.spatialReference 
+                        }),
+                        rotation: 0
+                    })
+                });
+                const mediaLayer2 = new MediaLayer({ source: [dynamicImage2], title: "Static Map Overlay Layer 02" });
+
+                const dynamicImage1 = new ImageElement({
+                    image: "media_layer-01.png",
+                    georeference: new ExtentAndRotationGeoreference({
+                        extent: new Extent({ 
+                            xmin: 1607922.6, ymin: 6463766.5, 
+                            xmax: 1607980.6, ymax: 6463905.3, 
+                            spatialReference: view.spatialReference 
+                        }),
+                        rotation: 0
+                    })
+                });
+                const mediaLayer1 = new MediaLayer({ source: [dynamicImage1], title: "Static Map Overlay Layer 01" });
+                
+                // Map layers will be evaluated before point layers
+                map.addMany([mediaLayer2, mediaLayer1]);
+            }
+
+            // Interpolates the precise physical midpoint along a polyline's drawn paths
+            function calculatePolylineMidpoint(geometry) {
+                if (!geometry || !geometry.paths || geometry.paths.length === 0 || geometry.paths[0].length === 0) return null;
+                
+                const vertices = geometry.paths[0]; 
+                if (vertices.length === 1) return { type: "point", x: vertices[0][0], y: vertices[0][1], spatialReference: geometry.spatialReference };
+
+                let totalLength = 0;
+                const segmentLengths = [];
+                
+                // Calculate lengths of all line segments
+                for (let i = 0; i < vertices.length - 1; i++) {
+                    const dx = vertices[i + 1][0] - vertices[i][0];
+                    const dy = vertices[i + 1][1] - vertices[i][1];
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    totalLength += len;
+                    segmentLengths.push(len);
+                }
+
+                const halfLengthTarget = totalLength / 2;
+                let accumulatedDistance = 0;
+
+                // Trace back along the path until we find the segment where the midpoint lives
+                for (let i = 0; i < segmentLengths.length; i++) {
+                    if (accumulatedDistance + segmentLengths[i] >= halfLengthTarget) {
+                        if (segmentLengths[i] === 0) continue; // Prevent division by zero
+                        
+                        const ratio = (halfLengthTarget - accumulatedDistance) / segmentLengths[i];
+                        return {
+                            type: "point",
+                            x: vertices[i][0] + ratio * (vertices[i + 1][0] - vertices[i][0]),
+                            y: vertices[i][1] + ratio * (vertices[i + 1][1] - vertices[i][1]),
+                            spatialReference: geometry.spatialReference
+                        };
+                    }
+                    accumulatedDistance += segmentLengths[i];
+                }
+                
+                return { type: "point", x: vertices[vertices.length - 1][0], y: vertices[vertices.length - 1][1], spatialReference: geometry.spatialReference };
+            }
+
+            // =========================================================================
+            // UI EVENTS & POPUPS
+            // =========================================================================
+            
+            function bindUIEvents() {
+                let startX = 0;
+                DOM.panel.addEventListener('touchstart', e => startX = e.changedTouches[0].screenX, {passive: true});
+                DOM.panel.addEventListener('touchend', e => {
+                    if (e.changedTouches[0].screenX - startX > 80 && window.innerWidth <= 600) DOM.panel.classList.remove("open");
+                }, {passive: true});
+
+                document.getElementById("closePanelBtn").addEventListener("click", closeSidePanel);
+                
+                document.getElementById("addRestaurantBtn").addEventListener("click", () => {
+                    state.isPickingLocation = true;
+                    DOM.pickHint.style.display = "block";
+                    view.container.style.cursor = "crosshair";
+                    DOM.panel.classList.remove("open");
+                });
+
+                DOM.pickHint.addEventListener("click", () => {
+                    state.isPickingLocation = false;
+                    DOM.pickHint.style.display = "none";
+                    view.container.style.cursor = "default";
+                });
+
+                view.on("click", async (e) => {
+                    if (state.isPickingLocation) {
+                        state.isPickingLocation = false;
+                        DOM.pickHint.style.display = "none";
+                        view.container.style.cursor = "default";
+                        if (e.mapPoint) window.open(`https://survey123.arcgis.com/share/7dae6166a1aa431e8a7c3e7abb65ebbb?center=${e.mapPoint.latitude},${e.mapPoint.longitude}`, "_blank");
+                        return;
+                    }
+
+                    if (!clientLayer) return;
+                    
+                    const res = await view.hitTest(e);
+                    const valid = res.results.find(r => r.graphic.attributes?.OBJECTID && r.graphic.geometry?.type === "point" && (r.layer === clientLayer || r.layer === activePathLayer));
+
+                    if (valid) renderSidebarContent(valid.graphic);
+                    else closeSidePanel(); 
+                });
+            }
+
+            function closeSidePanel() { 
+                DOM.panel.classList.remove("open"); 
+                activePathLayer.removeAll(); 
+                state.activePathLabel = state.activeGraphic = null;
+                updateHtmlOverlayLabels();
+            }
+
+            async function renderSidebarContent(graphic) {
+                state.activeGraphic = graphic;
+                activePathLayer.removeAll(); 
+                state.activePathLabel = null;
+                
+                const objId = graphic.attributes.OBJECTID;
+                const cache = state.reviewsCache[objId] || { title: "Neznámý podnik" };
+                
+                DOM.panelTitle.innerText = cache.title;
+                DOM.panelBody.innerHTML = `<div class="loading-text">Načítání...</div>`;
+                DOM.panel.classList.add("open");
+
+                const hPaths = new FeatureLayer({ url: URLS.PATHS });
+                const pathQuery = hPaths.createQuery();
+                pathQuery.where = `${FIELDS.LINK} = '${cache.title.replace(/'/g, "''")}'`;
+                pathQuery.outSpatialReference = view.spatialReference;
+
+                try {
+                    const pathRes = await hPaths.queryFeatures(pathQuery);
+                    
+                    let distHtml = "";
+                    if (pathRes?.features?.length) {
+                        const pf = pathRes.features[0];
+                        pf.symbol = { type: "simple-line", color: "#2563eb", width: 3.5, style: "short-dash" };
+                        
+                        // Add path first, so it draws underneath the red highlight point
+                        activePathLayer.add(pf);
+
+                        // Use ArcGIS Geometry Engine to calculate the true Geodesic distance, bypassing Web Mercator distortion
+                        const len = Math.round(geometryEngine.geodesicLength(pf.geometry, "meters"));
+                        if (len > 0) {
+                            // Calculate walking time (average walking speed of 5km/h translates to ~0.012 minutes per meter)
+                            const walkTime = Math.max(1, Math.round(len * 0.012));
+                            const pathText = `${len} m (${walkTime} min)`;
+
+                            distHtml = `<div class="rating-row flex-between"><span class="rating-label">Délka trasy</span><div class="meter-wrapper"><span>🚶</span><span class="distance-badge">${pathText}</span></div></div>`;
+                            
+                            // Generate position based on the calculated midpoint along the line
+                            const midPoint = calculatePolylineMidpoint(pf.geometry);
+                            state.activePathLabel = { geometry: midPoint || pf.geometry.extent.center, text: pathText };
+                        }
+                    }
+
+                    // Add highlight point after the line
+                    activePathLayer.addMany(getRestaurantGraphics(graphic.geometry, graphic.attributes, true));
+                    updateHtmlOverlayLabels();
+
+                    const rVal = Math.min(5, Math.max(0, cache.avgRating || 0));
+                    const pVal = Math.min(5, Math.max(0, cache.avgPrice || 0));
+                    
+                    // Generate formatted text for counts
+                    const starCountText = cache.hasStars ? ` <span style="color:#64748b;font-size:0.85em;font-weight:normal;">(${cache.countStars})</span>` : "";
+                    const priceCountText = cache.hasPrices ? ` <span style="color:#64748b;font-size:0.85em;font-weight:normal;">(${cache.countPrices})</span>` : "";
+
+                    const surveyUrl = `https://survey123.arcgis.com/share/63118db7a95340ce86f8537969770efb?field:podnik_nazev=${encodeURIComponent(cache.title)}`;
+                    const menuLink = graphic.attributes.poledni_menu_link;
+
+                    DOM.panelBody.innerHTML = `
+                        <div class="rating-container">
+                            <div class="rating-row flex-between">
+                                <span class="rating-label">Hodnocení</span>
+                                <div class="meter-wrapper">
+                                    <div class="visual-meter visual-meter-stars"><div>★★★★★</div><div class="visual-meter-filled stars-filled" style="width: ${cache.hasStars ? (rVal/5)*100 : 0}%;">★★★★★</div></div>
+                                    <span class="numeric-box">${cache.hasStars ? rVal.toFixed(1) + starCountText : "—"}</span>
+                                </div>
+                            </div>
+                            <div class="rating-row flex-between">
+                                <span class="rating-label">Cenová úroveň</span>
+                                <div class="meter-wrapper">
+                                    <div class="visual-meter visual-meter-prices"><div>$$$$$</div><div class="visual-meter-filled prices-filled" style="width: ${cache.hasPrices ? (pVal/5)*100 : 0}%;">$$$$$</div></div>
+                                    <span class="numeric-box">${cache.hasPrices ? pVal.toFixed(1) + priceCountText : "—"}</span>
+                                </div>
+                            </div>
+                            ${distHtml}
+                            ${menuLink?.trim() ? `<a href="${menuLink.trim()}" target="_blank" class="action-btn menu-link-btn">🍴 Zobrazit polední menu</a>` : `<div class="action-btn menu-link-btn disabled">🍴 Polední menu nedostupné</div>`}
+                            <a href="${surveyUrl}" target="_blank" class="action-btn submit-rating-btn">✍️ Ohodnotit podnik</a>
+                            <div id="toggleReviewsBtn" class="review-count-badge" style="${cache.count === 0 ? 'pointer-events:none;color:#64748b;' : ''}">
+                                ${cache.count === 0 ? "💬 Zatím bez hodnocení" : `💬 Zobrazit jednotlivá hodnocení (${cache.count})`}
+                            </div>
+                            <div id="reviewsPanel" class="reviews-panel">${cache.reviewsHtml || ""}</div>
+                        </div>
+                    `;
+
+                    if (cache.count > 0) {
+                        const tBtn = DOM.panelBody.querySelector("#toggleReviewsBtn");
+                        const rPan = DOM.panelBody.querySelector("#reviewsPanel");
+                        tBtn.addEventListener("click", () => {
+                            const isVisible = rPan.classList.toggle("visible");
+                            tBtn.innerText = isVisible ? `🔽 Skrýt jednotlivá hodnocení (${cache.count})` : `💬 Zobrazit jednotlivá hodnocení (${cache.count})`;
+                        });
+                    }
+                } catch (err) { DOM.panelBody.innerHTML = `<div style="color:#b91c1c; text-align:center; padding:20px 0;">Chyba datové relace.</div>`; }
+            }
+        });
+    </script>
+</body>
+</html>
