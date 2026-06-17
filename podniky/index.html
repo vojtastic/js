@@ -128,7 +128,7 @@
         .esri-zoom .esri-widget--button:hover { background-color: #f8fafc !important; color: #2563eb !important; }
         .esri-zoom .esri-widget--button::after, .esri-zoom .esri-widget--button::before { display: none !important; }
 
-        .esri-slider { background: transparent !important; margin-top: 8px; margin-bottom: 24px !important; }
+        .esri-slider { background: transparent !important; margin-top: 8px; margin-bottom: 8px !important; }
         .esri-slider__track { height: 6px !important; border-radius: 3px !important; background-color: #e2e8f0 !important; }
         .esri-slider__segment--interactive { background-color: #2563eb !important; }
         .esri-slider__thumb {
@@ -164,16 +164,25 @@
 
         /* Ratings & Stats */
         .rating-container { display: flex; flex-direction: column; gap: 12px; margin-top: 5px; }
+        
+        /* Prominent Hero Rating */
+        .hero-rating {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #f8fafc; padding: 20px 16px; border-radius: 24px; border: 1px solid #f1f5f9;
+            gap: 12px;
+        }
+        .hero-numeric {
+            font-size: 12px; font-weight: bold; color: #0f172a; background: #e2e8f0; 
+            padding: 3px 12px; border-radius: 30px; display: flex; align-items: center; gap: 6px;
+        }
+        .hero-numeric .count { color: #64748b; font-size: 11px; font-weight: normal; }
+
         .rating-row { background: #f8fafc; padding: 8px 16px; border-radius: 30px; border: 1px solid #f1f5f9; }
         .rating-label { font-weight: bold; color: #475569; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
         .meter-wrapper { display: flex; align-items: center; gap: 12px; }
         
-        .visual-meter { font-size: 1.3rem; line-height: 1; color: #e2e8f0; position: relative; user-select: none; display: inline-block; }
-        .visual-meter-stars { font-family: 'FF Unit Pro' !important; }
-        .visual-meter-prices { font-weight: bold; letter-spacing: 1px; }
+        .visual-meter { position: relative; display: flex; user-select: none; }
         .visual-meter-filled { position: absolute; top: 0; left: 0; overflow: hidden; white-space: nowrap; }
-        .stars-filled { color: #f59e0b; }
-        .prices-filled { color: #10b981; }
         
         .distance-badge { color: #2563eb; font-weight: bold; font-size: 13px; background: #eff6ff; border: 1px solid #bfdbfe; padding: 3px 10px; border-radius: 30px; }
         .numeric-box { font-size: 11px; font-weight: bold; color: #0f172a; background: #e2e8f0; padding: 2px 8px; border-radius: 30px; min-width: 22px; text-align: center; }
@@ -226,8 +235,6 @@
         .reviews-panel.visible { display: flex; }
         
         .individual-review-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 24px; padding: 16px; }
-        .review-stars-mini { color: #f59e0b; font-family: 'FF Unit Pro' !important; font-size: 1.1rem; letter-spacing: 1px; }
-        .review-prices-mini { color: #10b981; font-weight: bold; font-size: 11px; }
         .review-card-comment { font-size: 13px; color: #334155; line-height: 1.4; font-style: italic; word-break: break-word; margin-top: 6px; }
         
         .loading-text { color: #64748b; font-style: italic; text-align: center; padding: 40px 0; }
@@ -252,14 +259,6 @@
                 <button class="reset-slider-btn flex-center" id="resetRatingBtn" title="Obnovit výchozí">↺</button>
             </div>
             <div id="ratingSliderDiv"></div>
-            
-            <div style="height: 6px;"></div> 
-            
-            <div class="flex-between filter-header">
-                <label class="filter-label">💵 Filtr cen</label>
-                <button class="reset-slider-btn flex-center" id="resetPriceBtn" title="Obnovit výchozí">↺</button>
-            </div>
-            <div id="priceSliderDiv"></div>
         </div>
     </div>
 
@@ -307,8 +306,7 @@
 
             const FIELDS = {
                 TITLE: "podnik_nazev", LINK: "podnik_nazev", RATING: "celkove_hodnoceni", 
-                PRICE: "cenova_kategorie", COMMENT: "komentar", MENU: "poledni_menu_link",
-                GOOGLE_MAPS: "google_maps_link"
+                COMMENT: "komentar", MENU: "poledni_menu_link", GOOGLE_MAPS: "google_maps_link"
             };
 
             const SVGS = {
@@ -335,7 +333,23 @@
                 isPickingLocation: false, styleMode: 'default'
             };
             
-            let map, view, clientLayer, activePathLayer, ratingSlider, priceSlider;
+            let map, view, clientLayer, activePathLayer, ratingSlider;
+
+            // Helper for robust URL checking and formatting
+            function getValidUrl(string) {
+                if (!string || typeof string !== 'string') return null;
+                let urlStr = string.trim();
+                if (urlStr === "") return null;
+                // If it misses protocol, temporarily add http:// to check validity
+                if (!/^https?:\/\//i.test(urlStr)) {
+                    urlStr = 'http://' + urlStr;
+                }
+                try {
+                    return new URL(urlStr).href;
+                } catch (_) {
+                    return null;
+                }
+            }
 
             document.fonts.ready.then(initApp);
 
@@ -349,9 +363,13 @@
                 view = new MapView({
                     container: "viewDiv", 
                     map: map, 
-                    center: [14.417731, 50.07309], 
-                    zoom: 18, 
-                    constraints: { minZoom: 16, maxZoom: 20, snapToZoom: true }
+                    center: [14.444459, 50.101288], 
+                    zoom: 17, 
+                    constraints: { 
+                        minZoom: 16, 
+                        maxZoom: 20,
+                        snapToZoom: true
+                    }
                 });
                 
                 view.popup.autoOpenEnabled = false;
@@ -383,8 +401,8 @@
                 });
 
                 DOM.styleToggle.addEventListener("click", () => {
-                    const modes = { 'default': 'rating', 'rating': 'price', 'price': 'default' };
-                    const labels = { 'default': 'Výchozí', 'rating': 'Hodnocení', 'price': 'Ceny' };
+                    const modes = { 'default': 'rating', 'rating': 'default' };
+                    const labels = { 'default': 'Výchozí', 'rating': 'Hodnocení' };
                     state.styleMode = modes[state.styleMode];
                     DOM.styleToggle.innerHTML = `🎨 Barvy: ${labels[state.styleMode]}`;
                     updateAllPointStyles();
@@ -392,12 +410,10 @@
 
                 const sliderConfig = { min: 1, max: 5, steps: 1, values: [1, 5], visibleElements: { labels: true, rangeLabels: false }, labelFormatFunction: v => v.toString() };
                 ratingSlider = new Slider({ container: "ratingSliderDiv", ...sliderConfig });
-                priceSlider = new Slider({ container: "priceSliderDiv", ...sliderConfig });
 
                 document.getElementById("resetRatingBtn").addEventListener("click", () => ratingSlider.values = [1, 5]);
-                document.getElementById("resetPriceBtn").addEventListener("click", () => priceSlider.values = [1, 5]);
 
-                reactiveUtils.watch(() => [ratingSlider.values[0], ratingSlider.values[1], priceSlider.values[0], priceSlider.values[1]], updateAllPointStyles);
+                reactiveUtils.watch(() => [ratingSlider.values[0], ratingSlider.values[1]], updateAllPointStyles);
                 reactiveUtils.watch(() => [view.extent, view.zoom], updateHtmlOverlayLabels);
 
                 initDynamicMapLayer();
@@ -408,10 +424,41 @@
                 const hRes = new FeatureLayer({ url: URLS.RESTAURANTS });
                 const hRat = new FeatureLayer({ url: URLS.RATINGS });
                 
+                // Helper to bypass the 1000/2000 maxRecordCount server limit via automatic pagination
+                async function fetchAll(layer, queryParams) {
+                    await layer.load();
+                    const query = layer.createQuery();
+                    for (const key in queryParams) {
+                        query[key] = queryParams[key];
+                    }
+                    
+                    const count = await layer.queryFeatureCount(query);
+                    if (!count) return { features: [] };
+
+                    const max = layer.capabilities?.query?.maxRecordCount || 1000;
+                    const promises = [];
+
+                    for (let i = 0; i < count; i += max) {
+                        const pageQuery = query.clone();
+                        pageQuery.start = i;
+                        pageQuery.num = max;
+                        promises.push(layer.queryFeatures(pageQuery));
+                    }
+                    
+                    const results = await Promise.all(promises);
+                    return { features: results.flatMap(r => r.features) };
+                }
+                
                 try {
                     const [pointRes, ratingsRes] = await Promise.all([
-                        hRes.queryFeatures({ where: "1=1", outFields: ["*"], returnGeometry: true }),
-                        hRat.queryFeatures({ where: "1=1", outFields: [FIELDS.LINK, FIELDS.RATING, FIELDS.PRICE, FIELDS.COMMENT] })
+                        fetchAll(hRes, { where: "1=1", outFields: ["*"], returnGeometry: true }),
+                        // Now utilizing fetchAll to retrieve >1000 records
+                        fetchAll(hRat, { 
+                            where: "1=1", 
+                            outFields: [FIELDS.LINK, FIELDS.RATING, FIELDS.COMMENT, FIELDS.MENU],
+                            orderByFields: ["OBJECTID ASC"],
+                            returnGeometry: false
+                        })
                     ]);
 
                     const ratingsDict = {};
@@ -428,29 +475,41 @@
                         const objId = point.getObjectId() || (index + 1);
                         const matches = ratingsDict[title.trim().toLowerCase()] || [];
                         
-                        let sumStars = 0, sumPrices = 0, countStars = 0, countPrices = 0, totalMatches = 0;
+                        let sumStars = 0, countStars = 0, totalMatches = 0;
                         let reviewsHtml = "";
+                        let latestValidMenuLink = null;
 
                         matches.forEach(m => {
                             const r = Number(m.attributes[FIELDS.RATING]); 
-                            const p = m.attributes[FIELDS.PRICE] || 0; 
                             const comment = m.attributes[FIELDS.COMMENT];
+                            
+                            // Check if this review has a valid poledni_menu_link (overwrites earlier ones)
+                            const reviewMenuUrl = getValidUrl(m.attributes[FIELDS.MENU]);
+                            if (reviewMenuUrl) {
+                                latestValidMenuLink = reviewMenuUrl;
+                            }
 
                             const hasR = !isNaN(r) && m.attributes[FIELDS.RATING] !== null;
-                            const hasP = p > 0;
                             const hasC = comment?.trim();
 
-                            if (!hasR && !hasP && !hasC) { totalMatches++; return; }
+                            if (!hasR && !hasC) { totalMatches++; return; }
 
                             if (hasR) { sumStars += r; countStars++; }
-                            if (hasP) { sumPrices += p; countPrices++; }
                             totalMatches++;
 
                             let headerHtml = "";
-                            if (hasR || hasP) {
-                                headerHtml = `<div class="review-card-header flex-between" style="${!hasR && hasP ? 'justify-content: flex-end;' : ''}">`;
-                                if (hasR) headerHtml += `<div class="review-stars-mini">${"★".repeat(Math.round(r))}${"☆".repeat(5 - Math.round(r))}</div>`;
-                                if (hasP) headerHtml += `<div class="review-prices-mini">${"$".repeat(Math.round(p))}</div>`;
+                            if (hasR) {
+                                headerHtml = `<div class="review-card-header flex-between">`;
+                                
+                                // SVG stars for individual reviews
+                                let starsSvgHtml = "";
+                                const roundedR = Math.round(r);
+                                for (let i = 1; i <= 5; i++) {
+                                    const fillColor = i <= roundedR ? '#f59e0b' : '#e2e8f0';
+                                    starsSvgHtml += `<svg viewBox="0 0 24 24" width="16" height="16" fill="${fillColor}"><path d="${SVGS.STAR}"/></svg>`;
+                                }
+                                
+                                headerHtml += `<div class="flex-center" style="gap: 2px;">${starsSvgHtml}</div>`;
                                 headerHtml += `</div>`;
                             }
                             
@@ -459,21 +518,21 @@
                         });
 
                         const avgRating = countStars ? sumStars / countStars : 0;
-                        const avgPrice = countPrices ? sumPrices / countPrices : 0;
 
                         // Save the specific counts in the cache to display in the UI later
                         state.reviewsCache[objId] = {
-                            title, count: totalMatches, avgRating, avgPrice,
-                            hasStars: countStars > 0, hasPrices: countPrices > 0, 
-                            countStars, countPrices,
+                            title, count: totalMatches, avgRating,
+                            hasStars: countStars > 0, 
+                            countStars,
                             reviewsHtml, originalObjectId: objId
                         };
 
                         point.attributes = {
                             ...point.attributes, OBJECTID: objId, [FIELDS.TITLE]: title,
-                            calculated_stars: avgRating, calculated_prices: avgPrice,
+                            calculated_stars: avgRating,
                             review_count: totalMatches, 
-                            poledni_menu_link: point.attributes[FIELDS.MENU] || "",
+                            // Use the latest valid link found in reviews, fallback to Restaurant layer link
+                            poledni_menu_link: latestValidMenuLink || point.attributes[FIELDS.MENU] || "",
                             google_maps_link: point.attributes[FIELDS.GOOGLE_MAPS] || ""
                         };
                         state.features.push(point);
@@ -519,13 +578,7 @@
                 if (mode === 'default') return "#ffffff";
                 if (!attr.review_count) return "#e2e8f0"; // Missing data gets grey background
                 
-                const v = Math.round(attr[mode === 'rating' ? 'calculated_stars' : 'calculated_prices'] || 0);
-                
-                if (mode === 'price') {
-                    // Reversed palette: 1 is Green (cheapest), 5 is Red (most expensive)
-                    const priceColors = ["#e2e8f0", "#4ade80", "#a3e635", "#facc15", "#fb923c", "#f87171"];
-                    return priceColors[v] || "#f87171";
-                }
+                const v = Math.round(attr.calculated_stars || 0);
                 
                 // Rating palette: 1 is Red (worst), 5 is Green (best)
                 const ratingColors = ["#e2e8f0", "#f87171", "#fb923c", "#facc15", "#a3e635", "#4ade80"];
@@ -549,11 +602,10 @@
                 if (state.styleMode === 'default') {
                     graphics.push(new Graphic({ geometry, attributes, symbol: { type: "simple-marker", path: SVGS.CUTLERY, color: "#000000", size: 13, outline: null } }));
                 } else if (attributes.review_count > 0) {
-                    const useStar = state.styleMode === 'rating';
-                    let n = Math.max(1, Math.min(5, Math.round(attributes[useStar ? 'calculated_stars' : 'calculated_prices'] || 0)));
+                    let n = Math.max(1, Math.min(5, Math.round(attributes.calculated_stars || 0)));
                     
                     const radii = [0, 0, 4.5, 5.2, 5.8, 6.2];
-                    const uniformSize = useStar ? 7 : 8.5; // Constant size for all counts
+                    const uniformSize = 7; // Constant size for all counts
                     
                     for (let i = 0; i < n; i++) {
                         const angle = (Math.PI / 2) + (i * 2 * Math.PI) / n;
@@ -562,9 +614,7 @@
 
                         graphics.push(new Graphic({
                             geometry, attributes,
-                            symbol: useStar 
-                                ? { type: "simple-marker", path: SVGS.STAR, color: "#000000", size: uniformSize, outline: null, xoffset, yoffset }
-                                : { type: "text", text: "$", color: "#000000", font: { size: uniformSize, weight: "bold", family: "FF Unit Pro" }, horizontalAlignment: "center", verticalAlignment: "middle", xoffset, yoffset }
+                            symbol: { type: "simple-marker", path: SVGS.STAR, color: "#000000", size: uniformSize, outline: null, xoffset, yoffset }
                         }));
                     }
                 }
@@ -573,7 +623,7 @@
 
             function updateAllPointStyles() {
                 if (!clientLayer) return;
-                const [rMin, rMax, pMin, pMax] = [...ratingSlider.values, ...priceSlider.values];
+                const [rMin, rMax] = ratingSlider.values;
 
                 clientLayer.removeAll();
                 state.labelsData.length = 0;
@@ -582,12 +632,10 @@
                     const attr = point.attributes;
                     const isUnrated = attr.review_count === 0;
                     const r = isUnrated ? 0 : Math.round(attr.calculated_stars || 0);
-                    const p = isUnrated ? 0 : Math.round(attr.calculated_prices || 0);
 
                     const passRating = (rMin === 1 && rMax === 5) || (!isUnrated && r >= rMin && r <= rMax);
-                    const passPrice = (pMin === 1 && pMax === 5) || (!isUnrated && p >= pMin && p <= pMax);
 
-                    if (passRating && passPrice) {
+                    if (passRating) {
                         clientLayer.addMany(getRestaurantGraphics(point.geometry, attr, false));
                         state.labelsData.push({ geometry: point.geometry, text: attr[FIELDS.TITLE] });
                     }
@@ -781,11 +829,14 @@
                     updateHtmlOverlayLabels();
 
                     const rVal = Math.min(5, Math.max(0, cache.avgRating || 0));
-                    const pVal = Math.min(5, Math.max(0, cache.avgPrice || 0));
                     
                     // Generate formatted text for counts
-                    const starCountText = cache.hasStars ? ` <span style="color:#64748b;font-size:0.85em;font-weight:normal;">(${cache.countStars})</span>` : "";
-                    const priceCountText = cache.hasPrices ? ` <span style="color:#64748b;font-size:0.85em;font-weight:normal;">(${cache.countPrices})</span>` : "";
+                    const starCountText = cache.hasStars ? `<span class="count">(${cache.countStars} hodnocení)</span>` : "";
+
+                    // Reusable SVG string generator for the hero rating stars
+                    const starSvgStr = (color) => `<svg viewBox="0 0 24 24" width="28" height="28" fill="${color}"><path d="${SVGS.STAR}"/></svg>`;
+                    const baseStars = Array(5).fill(starSvgStr('#e2e8f0')).join('');
+                    const filledStars = Array(5).fill(starSvgStr('#f59e0b')).join('');
 
                     const surveyUrl = `https://survey123.arcgis.com/share/63118db7a95340ce86f8537969770efb?field:podnik_nazev=${encodeURIComponent(cache.title)}`;
                     
@@ -804,18 +855,16 @@
 
                     DOM.panelBody.innerHTML = `
                         <div class="rating-container">
-                            <div class="rating-row flex-between">
-                                <span class="rating-label">Hodnocení</span>
-                                <div class="meter-wrapper">
-                                    <div class="visual-meter visual-meter-stars"><div>★★★★★</div><div class="visual-meter-filled stars-filled" style="width: ${cache.hasStars ? (rVal/5)*100 : 0}%;">★★★★★</div></div>
-                                    <span class="numeric-box">${cache.hasStars ? rVal.toFixed(1) + starCountText : "—"}</span>
+                            <div class="hero-rating">
+                                <div class="visual-meter" style="display: flex; position: relative;">
+                                    <div style="display: flex; gap: 4px;">${baseStars}</div>
+                                    <div class="visual-meter-filled" style="width: ${cache.hasStars ? (rVal/5)*100 : 0}%; overflow: hidden; position: absolute; top: 0; left: 0; display: flex; gap: 4px;">
+                                        <div style="display: flex; gap: 4px; width: max-content;">${filledStars}</div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="rating-row flex-between">
-                                <span class="rating-label">Cenová úroveň</span>
-                                <div class="meter-wrapper">
-                                    <div class="visual-meter visual-meter-prices"><div>$$$$$</div><div class="visual-meter-filled prices-filled" style="width: ${cache.hasPrices ? (pVal/5)*100 : 0}%;">$$$$$</div></div>
-                                    <span class="numeric-box">${cache.hasPrices ? pVal.toFixed(1) + priceCountText : "—"}</span>
+                                <div class="hero-numeric">
+                                    ${cache.hasStars ? rVal.toFixed(1) : "—"}
+                                    ${starCountText}
                                 </div>
                             </div>
                             ${distHtml}
