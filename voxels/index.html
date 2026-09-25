@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Holešovice Voxel Viewer</title>
+
+  <!-- ArcGIS Maps SDK for JavaScript 5.1: core API + map components + Calcite in one script -->
+  <script type="module" src="https://js.arcgis.com/5.1/"></script>
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #1b1b1b;
+      font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+
+    arcgis-scene {
+      display: block;
+      height: 100%;
+      width: 100%;
+    }
+
+    /* Title card */
+    .title-card {
+      background: var(--calcite-color-foreground-1);
+      border: 1px solid var(--calcite-color-border-3);
+      border-radius: 6px;
+      padding: 10px 14px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      color: var(--calcite-color-text-1);
+      min-width: 200px;
+    }
+    .title-card h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+    .title-card p {
+      margin: 2px 0 0;
+      font-size: 12px;
+      color: var(--calcite-color-text-3);
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--calcite-color-text-2);
+    }
+    .status[hidden] { display: none; }
+
+    /* Panels inside expands */
+    .panel {
+      width: 300px;
+      max-height: 70vh;
+      overflow: auto;
+    }
+    .panel-body {
+      padding: 12px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .panel-body calcite-label { margin-bottom: 0; }
+    .hint {
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--calcite-color-text-3);
+      border-top: 1px solid var(--calcite-color-border-3);
+      padding-top: 10px;
+    }
+
+    /* Time slider docked at the bottom */
+    arcgis-time-slider {
+      width: min(720px, calc(100vw - 32px));
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+  </style>
+</head>
+
+<body class="calcite-mode-dark">
+  <!-- viewing-mode must be set before the scene loads: VoxelLayer only renders in local scenes -->
+  <arcgis-scene viewing-mode="local" quality-profile="high">
+
+    <!-- Top-left: title + navigation -->
+    <div slot="top-left" class="title-card">
+      <h1>Holešovice</h1>
+      <p>Voxel simulation · Prague</p>
+      <div class="status" id="status">
+        <calcite-loader inline label="Loading"></calcite-loader>
+        <span id="statusText">Loading layers…</span>
+      </div>
+    </div>
+    <arcgis-zoom slot="top-left"></arcgis-zoom>
+    <arcgis-navigation-toggle slot="top-left"></arcgis-navigation-toggle>
+    <arcgis-compass slot="top-left"></arcgis-compass>
+
+    <!-- Top-right: tools (one open at a time via group) -->
+    <arcgis-expand slot="top-right" group="tools" expand-icon="layers" expand-tooltip="Layers">
+      <arcgis-layer-list visibility-appearance="checkbox"></arcgis-layer-list>
+    </arcgis-expand>
+
+    <arcgis-expand slot="top-right" group="tools" expand-icon="legend" expand-tooltip="Legend">
+      <arcgis-legend></arcgis-legend>
+    </arcgis-expand>
+
+    <arcgis-expand slot="top-right" group="tools" expand-icon="slice" expand-tooltip="Slice tool">
+      <arcgis-slice></arcgis-slice>
+    </arcgis-expand>
+
+    <arcgis-expand slot="top-right" group="tools" expand-icon="gear" expand-tooltip="Settings">
+      <calcite-panel heading="Settings" class="panel">
+        <div class="panel-body">
+
+          <calcite-label>
+            Rendering quality
+            <calcite-segmented-control id="qualityControl" width="full" scale="s">
+              <calcite-segmented-control-item value="low">Performance</calcite-segmented-control-item>
+              <calcite-segmented-control-item value="medium">Medium</calcite-segmented-control-item>
+              <calcite-segmented-control-item value="high" checked>Quality</calcite-segmented-control-item>
+            </calcite-segmented-control>
+          </calcite-label>
+
+          <calcite-label layout="inline-space-between">
+            Allow camera below ground
+            <calcite-switch id="undergroundSwitch"></calcite-switch>
+          </calcite-label>
+
+          <div class="hint">
+            Limit Box clipping is omitted. True extent reduction and network data savings must be
+            performed server-side during layer publishing — client-side clipping cannot prevent
+            streaming of the full voxel LOD.
+          </div>
+        </div>
+      </calcite-panel>
+    </arcgis-expand>
+
+    <!-- Bottom: time slider (shown once configured from the voxel layer's time info) -->
+    <arcgis-time-slider slot="bottom-left" hidden></arcgis-time-slider>
+  </arcgis-scene>
+
+  <script type="module">
+    const [
+      Map, Basemap, Ground, SpatialReference, Extent,
+      VoxelLayer, SceneLayer, VectorTileLayer, ElevationLayer
+    ] = await $arcgis.import([
+      "@arcgis/core/Map.js",
+      "@arcgis/core/Basemap.js",
+      "@arcgis/core/Ground.js",
+      "@arcgis/core/geometry/SpatialReference.js",
+      "@arcgis/core/geometry/Extent.js",
+      "@arcgis/core/layers/VoxelLayer.js",
+      "@arcgis/core/layers/SceneLayer.js",
+      "@arcgis/core/layers/VectorTileLayer.js",
+      "@arcgis/core/layers/ElevationLayer.js"
+    ]);
+
+    const viewElement = document.querySelector("arcgis-scene");
+    const statusEl = document.getElementById("status");
+    const statusText = document.getElementById("statusText");
+
+    // ---------- Layers ----------
+    const basemap = new Basemap({
+      title: "Základní mapa",
+      baseLayers: [
+        new VectorTileLayer({
+          url: "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/zakladni_mapa_WGS/VectorTileServer"
+        })
+      ]
+    });
+
+    const terrain = new ElevationLayer({
+      title: "DTM 1 m",
+      url: "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/dtm1m_wgs_test1_3/ImageServer"
+    });
+
+    // Buildings and bridges are always on: hidden from the layer list and the legend
+    const buildings = new SceneLayer({
+      title: "3D budovy",
+      url: "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/budovy3D_2020_2/SceneServer",
+      listMode: "hide",
+      legendEnabled: false
+    });
+
+    const bridges = new SceneLayer({
+      title: "3D mosty",
+      url: "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/Mosty3D_2020/SceneServer",
+      listMode: "hide",
+      legendEnabled: false
+    });
+
+    const voxelLayer = new VoxelLayer({
+      title: "Voxel simulace",
+      url: "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/holesovice_stern_adapt_voxel_4326/SceneServer"
+    });
+
+    const map = new Map({
+      basemap,
+      // Custom terrain replaces the default world elevation
+      ground: new Ground({ layers: [terrain] }),
+      layers: [buildings, bridges, voxelLayer]
+    });
+
+    // ---------- Scene setup ----------
+    // Local scene in WGS84: the voxel and 3D layers are WGS84, and the
+    // basemap + terrain share the Web Mercator tiling scheme (allowed in a local WGS84 scene).
+    viewElement.spatialReference = SpatialReference.WGS84;
+
+    // Keep the local scene to the Prague data extent instead of a world-sized plane
+    viewElement.clippingArea = new Extent({
+      xmin: 14.20, ymin: 49.92,
+      xmax: 14.76, ymax: 50.21,
+      spatialReference: SpatialReference.WGS84
+    });
+
+    viewElement.camera = {
+      position: {
+        longitude: 14.44159820016465,
+        latitude: 50.089756227611645,
+        z: 1041.599808192812,
+        spatialReference: SpatialReference.WGS84
+      },
+      heading: 20.22014364902025,
+      tilt: 56.629807738991296
+    };
+
+    viewElement.map = map;
+
+    viewElement.addEventListener("arcgisLoadError", () => {
+      console.error("Scene load errors:", viewElement.loadErrorSources);
+    });
+
+    await viewElement.viewOnReady();
+
+    // ---------- Slice: cut only the voxel layer ----------
+    // Buildings, bridges and the terrain are excluded, so the slice plane only affects the voxel.
+    const sliceElement = document.querySelector("arcgis-slice");
+    await sliceElement.componentOnReady();
+    sliceElement.analysis.excludeGroundSurface = true;
+    sliceElement.analysis.excludedLayers.addMany([buildings, bridges]);
+
+    // ---------- Time slider ----------
+    const timeSlider = document.querySelector("arcgis-time-slider");
+    timeSlider.mode = "instant";
+    timeSlider.timeVisible = true;
+    timeSlider.playRate = 1000;
+    timeSlider.loop = true;
+
+    try {
+      await voxelLayer.load();
+      await viewElement.whenLayerView(voxelLayer);
+
+      const fullTimeExtent = voxelLayer.timeInfo?.fullTimeExtent;
+      if (fullTimeExtent) {
+        timeSlider.fullTimeExtent = fullTimeExtent;
+
+        // Strict 10-minute intervals
+        timeSlider.stops = {
+          interval: { value: 10, unit: "minutes" },
+          timeExtent: fullTimeExtent
+        };
+
+        // Start on the very first step
+        timeSlider.timeExtent = {
+          start: fullTimeExtent.start,
+          end: fullTimeExtent.start
+        };
+
+        timeSlider.hidden = false;
+      }
+      statusEl.hidden = true;
+    } catch (err) {
+      console.error("Failed to load the voxel layer:", err);
+      statusText.textContent = "Voxel layer failed to load — see console.";
+      statusEl.querySelector("calcite-loader")?.remove();
+    }
+
+    // ---------- Settings ----------
+    document.getElementById("qualityControl").addEventListener("calciteSegmentedControlChange", (e) => {
+      viewElement.qualityProfile = e.target.value;
+    });
+
+    document.getElementById("undergroundSwitch").addEventListener("calciteSwitchChange", (e) => {
+      map.ground.navigationConstraint = { type: e.target.checked ? "none" : "stay-above" };
+    });
+  </script>
+</body>
+</html>
