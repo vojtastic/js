@@ -677,13 +677,17 @@ function buildFlowField(g, vec, inside) {
   const foam = maskedBlur(foamRaw, wet, w, h, 1, 1);
   const foamWide = maskedBlur(foamRaw, wet, w, h, 1, CONFIG.ringCells + 2);
 
+  // depth jumps by metres between neighbouring cells at quays and banks; a light blur keeps those jumps from showing
+  // as 12 m steps in the water colour (the shader also samples this texture with a smooth B-spline filter)
+  const depthSmooth = maskedBlur(depth, surface, w, h, 1, 1);
+
   const tex = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
     if (!surface[i]) continue;
     if (!(foam[i] === foam[i])) foam[i] = foamWide[i];
     tex[i * 4]     = vxs[i] || 0;
     tex[i * 4 + 1] = vys[i] || 0;
-    tex[i * 4 + 2] = depth[i];
+    tex[i * 4 + 2] = depthSmooth[i] || 0;
     tex[i * 4 + 3] = foam[i] || 0;
   }
 
@@ -877,6 +881,25 @@ vec3 skyColor(vec3 d, vec3 L) {
   return c * (0.45 + 0.55 * clamp(L.z * 2.5 + 0.2, 0.0, 1.0));
 }
 
+// cubic B-spline filtering from 4 bilinear taps: no visible 12 m grid in the depth-driven colour
+vec4 cubicWeights(float v) {
+  vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v, s = n * n * n;
+  float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
+  return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
+}
+vec4 textureBSpline(sampler2D tex, vec2 uv) {
+  vec2 size = vec2(textureSize(tex, 0));
+  uv = uv * size - 0.5;
+  vec2 fxy = fract(uv);
+  uv -= fxy;
+  vec4 xc = cubicWeights(fxy.x), yc = cubicWeights(fxy.y);
+  vec4 c = uv.xxyy + vec2(-0.5, 1.5).xyxy;
+  vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+  vec4 o = (c + vec4(xc.yw, yc.yw) / s) / size.xxyy;
+  float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);
+  return mix(mix(texture(tex, o.yw), texture(tex, o.xw), sx), mix(texture(tex, o.yz), texture(tex, o.xz), sx), sy);
+}
+
 vec3 speedRamp(float t) {
   t = clamp(t, 0.0, 1.0);
   return clamp(vec3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)), 0.0, 1.0);
@@ -885,7 +908,7 @@ vec3 speedRamp(float t) {
 void main() {
   if (uUseMask == 1 && texelFetch(uMask, ivec2(gl_FragCoord.xy), 0).r < 0.5) discard;   // outside the flood polygon
 
-  vec4 f = texture(uFlow, vUV);
+  vec4 f = textureBSpline(uFlow, vUV);
   vec2 vel = f.xy;
   float speed = length(vel), depth = f.z;
   vec3 toEye = uEye - vPos;
