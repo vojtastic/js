@@ -15,14 +15,12 @@
   <style>
     :root {
       --river: rgba(30, 42, 48, 0.9);    /* panel */
-      --river-solid: #1E2A30;
       --deep: #141C20;
       --line: #34444B;                   /* hairlines, tracks */
       --silt: #C4A266;                   /* accent: flood water */
-      --silt-soft: rgba(196, 162, 102, 0.18);
       --staff: #ECEEE8;                  /* primary text, gauge staff */
       --mist: #93A6AD;                   /* secondary text */
-      --mark: #C8463D;                   /* high-water mark */
+      --mark: #C8463D;                   /* high-water mark, flood barriers */
       --display: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
       --ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
     }
@@ -45,11 +43,11 @@
 
     /* the staff gauge: white staff with an E-pattern, silt water rising from the bottom */
     .gauge { position: relative; overflow: hidden; background: var(--staff); }
-    .gauge::before {                               /* left blocks of the "E" */
+    .gauge::before {
       content: ""; position: absolute; inset: 0 8px 0 0;
       background: repeating-linear-gradient(to top, #1A2328 0 10px, transparent 10px 20px);
     }
-    .gauge::after {                                /* fine ticks on the right */
+    .gauge::after {
       content: ""; position: absolute; inset: 0 0 0 8px;
       background: repeating-linear-gradient(to top, #1A2328 0 1.5px, transparent 1.5px 5px);
       -webkit-mask: linear-gradient(to right, #000 0 5px, transparent 5px); mask: linear-gradient(to right, #000 0 5px, transparent 5px);
@@ -61,25 +59,20 @@
       transition: height 0.6s cubic-bezier(.3, .7, .2, 1);
     }
     .gauge-mark {
-      position: absolute; left: 0; right: 0; z-index: 2; height: 2px;
-      bottom: var(--mark-at, 74%); background: var(--mark);
-      opacity: 0; transition: opacity 0.4s 0.5s;
+      position: absolute; left: 0; right: 0; z-index: 2; height: 2px; bottom: 74%;
+      background: var(--mark); opacity: 0; transition: opacity 0.4s 0.5s;
     }
     .panel.ready .gauge-mark { opacity: 1; }
 
-    .panel-body { padding: 16px 16px 14px 16px; overflow-y: auto; min-width: 0; }
+    .panel-body { padding: 16px 16px 14px; overflow-y: auto; min-width: 0; }
 
     .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .place { margin: 0 0 2px; color: var(--mist); font-size: 12px; }
-    .q {
-      margin: 0; font: 650 36px/1.02 var(--display); letter-spacing: -0.02em;
-      font-variation-settings: "opsz" 96;
-    }
+    .q { margin: 0; font: 650 36px/1.02 var(--display); letter-spacing: -0.02em; white-space: nowrap; }
     .q .unit { font: 500 15px/1 var(--ui); letter-spacing: 0; color: var(--mist); margin-left: 2px; }
+    #qValue { word-spacing: 0.12em; }      /* digit grouping in the headline: 5 160 */
     .split { margin: 6px 0 0; color: var(--mist); font-size: 12.5px; }
     .split b { color: var(--staff); font-weight: 600; white-space: nowrap; }
-    .q { white-space: nowrap; }
-    #qValue { word-spacing: 0.12em; }      /* digit grouping in the headline: 5 160 */
 
     .collapse {
       flex: 0 0 auto; width: 30px; height: 30px; margin: -2px -4px 0 0;
@@ -95,7 +88,6 @@
 
     .stats { display: flex; gap: 18px; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); }
     .stats[hidden] { display: none; }
-    .stats div { min-width: 0; }
     .stats dt { color: var(--mist); font-size: 11.5px; }
     .stats dd { margin: 1px 0 0; font: 650 17px/1.2 var(--display); white-space: nowrap; }
     .stats dd small { font: 500 11.5px var(--ui); color: var(--mist); margin-left: 2px; }
@@ -109,17 +101,15 @@
     .sec-toggle {
       display: inline-flex; align-items: center; gap: 8px; padding: 6px 8px 6px 0; margin: 0;
       border: 0; background: transparent; color: var(--staff); cursor: pointer;
-      font: 650 15px/1.2 var(--display); letter-spacing: -0.005em;
+      font: 650 15px/1.2 var(--display);
     }
     .sec-toggle .chev { color: var(--mist); transition: transform 0.2s; }
-    .section.collapsed .sec-toggle .chev { transform: rotate(-90deg); }
+    .section.collapsed .chev { transform: rotate(-90deg); }
     .section.collapsed .sec-body { display: none; }
     .sec-body { padding-bottom: 10px; }
     .note { margin: 0 0 6px; color: var(--mist); font-size: 12px; line-height: 1.4; }
-    .legend .bar.flow { background: linear-gradient(90deg, #93A6AD, #ECEEE8 27%, #C8463D); }   /* stops 0 · 8 · 30 */
 
     .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
-    .row > label, .row > span { color: var(--staff); }
 
     /* switch */
     .switch {
@@ -133,6 +123,7 @@
     }
     .switch:checked { background: var(--silt); }
     .switch:checked::after { transform: translateX(16px); background: var(--deep); }
+    .switch:disabled { opacity: 0.4; cursor: default; }
 
     /* segmented control */
     .seg { display: inline-grid; grid-auto-flow: column; padding: 3px; border-radius: 9px; background: var(--deep); }
@@ -146,7 +137,6 @@
 
     /* sliders */
     .slider { display: grid; grid-template-columns: 1fr auto; row-gap: 6px; padding: 6px 0 4px; }
-    .slider label { color: var(--staff); }
     .slider output { color: var(--mist); }
     .slider input[type=range] {
       grid-column: 1 / -1; width: 100%; margin: 0; height: 18px; background: transparent; cursor: pointer;
@@ -170,6 +160,7 @@
     .legend[hidden] { display: none; }
     .legend .bar { height: 6px; border-radius: 3px;
       background: linear-gradient(90deg, #0000FF, #00FFFF 25%, #00FF00 50%, #FFFF00 75%, #FF0000); }
+    .legend .bar.flow { background: linear-gradient(90deg, #93A6AD, #ECEEE8 27%, #C8463D); }   /* stops 0 · 8 · 30 */
     .legend .ticks { display: flex; justify-content: space-between; margin-top: 4px; color: var(--mist); font-size: 11.5px; }
 
     :focus-visible { outline: 2px solid var(--silt); outline-offset: 2px; }
@@ -202,8 +193,8 @@
       <header class="head">
         <div>
           <p class="place">Vltava in Prague, modelled flood</p>
-          <h1 class="q"><span id="qValue">5 160</span><span class="unit">m³/s</span></h1>
-          <p class="split" id="qSplit">Vltava 3 000 and Berounka 2 160</p>
+          <h1 class="q"><span id="qValue">5 160</span><span class="unit">m³/s</span></h1>
+          <p class="split" id="qSplit">Vltava 3 000 and Berounka 2 160</p>
         </div>
         <button class="collapse" id="collapse" type="button" aria-expanded="true" aria-controls="controls" title="Hide controls">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 10l4.5-4.5 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -213,90 +204,94 @@
       <p class="status" id="status" role="status">Loading the scene…</p>
 
       <dl class="stats" id="stats" hidden>
-        <div><dt>Flooded area</dt><dd id="sArea">–</dd></div>
-        <div><dt>Mean speed</dt><dd id="sMean">–</dd></div>
-        <div><dt>Fastest</dt><dd id="sMax">–</dd></div>
+        <div><dt>Flooded area</dt><dd id="statArea">–</dd></div>
+        <div><dt>Mean speed</dt><dd id="statMean">–</dd></div>
+        <div><dt>Fastest</dt><dd id="statMax">–</dd></div>
       </dl>
 
       <div class="controls" id="controls">
         <!-- realistic water (custom RenderNode) -->
-        <section class="section" id="secWater">
+        <section class="section" id="waterSection">
           <div class="sec-head">
             <button class="sec-toggle" type="button" aria-expanded="true" aria-controls="waterBody">
               <svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Water
             </button>
-            <input class="switch" id="enabled" type="checkbox" role="switch" checked aria-label="Show water" />
+            <input class="switch" id="waterVisible" type="checkbox" role="switch" checked aria-label="Show water" />
           </div>
           <div class="sec-body" id="waterBody">
-        <div class="row">
-          <span id="lookLabel">Water look</span>
-          <div class="seg" role="radiogroup" aria-labelledby="lookLabel">
-            <input type="radio" name="look" id="lookFlood" value="flood" checked /><label for="lookFlood">Muddy flood</label>
-            <input type="radio" name="look" id="lookClear" value="clear" /><label for="lookClear">Clear river</label>
-          </div>
-        </div>
-        <div class="slider">
-          <label for="speed">Flow speed</label><output id="speedVal" for="speed">3.0×</output>
-          <input id="speed" type="range" min="1" max="5" step="0.05" value="3" />
-        </div>
-        <div class="slider">
-          <label for="waves">Wave size</label><output id="wavesVal" for="waves">1.0×</output>
-          <input id="waves" type="range" min="0.4" max="2.5" step="0.05" value="1" />
-        </div>
-        <div class="slider">
-          <label for="opacity">Opacity</label><output id="opacityVal" for="opacity">90 %</output>
-          <input id="opacity" type="range" min="0.3" max="1" step="0.01" value="0.9" />
-        </div>
-        <div class="row">
-          <label for="debug">Colour by speed</label>
-          <input class="switch" id="debug" type="checkbox" role="switch" />
-        </div>
-        <div class="legend" id="legend" hidden>
-          <div class="bar"></div>
-          <div class="ticks"><span>0</span><span>1</span><span>2</span><span>3</span><span>4 m/s</span></div>
-        </div>
+            <div class="row">
+              <span id="lookLabel">Water look</span>
+              <div class="seg" role="radiogroup" aria-labelledby="lookLabel">
+                <input type="radio" name="look" id="lookFlood" value="flood" checked /><label for="lookFlood">Muddy flood</label>
+                <input type="radio" name="look" id="lookClear" value="clear" /><label for="lookClear">Clear river</label>
+              </div>
+            </div>
+            <div class="slider">
+              <label for="waterSpeed">Flow speed</label><output id="waterSpeedVal" for="waterSpeed"></output>
+              <input id="waterSpeed" type="range" min="1" max="5" step="0.05" />
+            </div>
+            <div class="slider">
+              <label for="waveSize">Wave size</label><output id="waveSizeVal" for="waveSize"></output>
+              <input id="waveSize" type="range" min="0.4" max="2.5" step="0.05" />
+            </div>
+            <div class="slider">
+              <label for="waterOpacity">Opacity</label><output id="waterOpacityVal" for="waterOpacity"></output>
+              <input id="waterOpacity" type="range" min="0.3" max="1" step="0.01" />
+            </div>
+            <div class="row">
+              <label for="speedColours">Colour by speed</label>
+              <input class="switch" id="speedColours" type="checkbox" role="switch" />
+            </div>
+            <div class="legend" id="speedLegend" hidden>
+              <div class="bar"></div>
+              <div class="ticks"><span>0</span><span>1</span><span>2</span><span>3</span><span>4 m/s</span></div>
+            </div>
           </div>
         </section>
 
         <!-- Esri FlowRenderer on the MagDir raster, draped on the flood surface -->
-        <section class="section collapsed" id="secFlow">
+        <section class="section collapsed" id="linesSection">
           <div class="sec-head">
-            <button class="sec-toggle" type="button" aria-expanded="false" aria-controls="flowBody">
+            <button class="sec-toggle" type="button" aria-expanded="false" aria-controls="linesBody">
               <svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Flow lines
             </button>
-            <input class="switch" id="flowEnabled" type="checkbox" role="switch" aria-label="Show flow lines" />
+            <input class="switch" id="linesVisible" type="checkbox" role="switch" aria-label="Show flow lines" />
           </div>
-          <div class="sec-body" id="flowBody">
-            <p class="note">Esri Flow Renderer on the MagDir raster, draped on the flood surface. Turning it on makes the water more transparent.</p>
+          <div class="sec-body" id="linesBody">
+            <p class="note">Esri Flow Renderer on the MagDir raster, draped on the flood surface. The water turns more transparent while the lines are shown.</p>
             <div class="row">
-              <span id="flowColorLabel">Colour</span>
-              <div class="seg" role="radiogroup" aria-labelledby="flowColorLabel">
-                <input type="radio" name="flowColor" id="fcWhite" value="white" checked /><label for="fcWhite">White</label>
-                <input type="radio" name="flowColor" id="fcSilt" value="silt" /><label for="fcSilt">Silt</label>
-                <input type="radio" name="flowColor" id="fcFlow" value="flow" /><label for="fcFlow">By flow</label>
+              <label for="linesBold">Make lines stand out</label>
+              <input class="switch" id="linesBold" type="checkbox" role="switch" />
+            </div>
+            <div class="row">
+              <span id="lineColorLabel">Colour</span>
+              <div class="seg" role="radiogroup" aria-labelledby="lineColorLabel">
+                <input type="radio" name="lineColor" id="lcWhite" value="white" checked /><label for="lcWhite">White</label>
+                <input type="radio" name="lineColor" id="lcSilt" value="silt" /><label for="lcSilt">Silt</label>
+                <input type="radio" name="lineColor" id="lcFlow" value="flow" /><label for="lcFlow">By flow</label>
               </div>
             </div>
-            <div class="legend" id="flowLegend" hidden>
+            <div class="legend" id="lineLegend" hidden>
               <div class="bar flow"></div>
               <div class="ticks"><span>0</span><span>≥ 30 m²/s unit discharge</span></div>
             </div>
             <div class="slider">
-              <label for="flowDensity">Density</label><output id="flowDensityVal" for="flowDensity">80 %</output>
-              <input id="flowDensity" type="range" min="0.1" max="1" step="0.05" value="0.8" />
+              <label for="lineDensity">Density</label><output id="lineDensityVal" for="lineDensity"></output>
+              <input id="lineDensity" type="range" min="0.1" max="3" step="0.05" />
             </div>
             <div class="slider">
-              <label for="flowTrail">Trail length</label><output id="flowTrailVal" for="flowTrail">50 px</output>
-              <input id="flowTrail" type="range" min="20" max="300" step="10" value="50" />
+              <label for="lineLength">Trail length</label><output id="lineLengthVal" for="lineLength"></output>
+              <input id="lineLength" type="range" min="20" max="300" step="10" />
             </div>
             <div class="slider">
-              <label for="flowWidth">Line width</label><output id="flowWidthVal" for="flowWidth">4 px</output>
-              <input id="flowWidth" type="range" min="0.5" max="5" step="0.25" value="4" />
+              <label for="lineWidth">Line width</label><output id="lineWidthVal" for="lineWidth"></output>
+              <input id="lineWidth" type="range" min="0.5" max="5" step="0.25" />
             </div>
             <div class="slider">
-              <label for="flowSpeed">Animation speed</label><output id="flowSpeedVal" for="flowSpeed">7</output>
-              <input id="flowSpeed" type="range" min="1" max="15" step="1" value="7" />
+              <label for="lineSpeed">Animation speed</label><output id="lineSpeedVal" for="lineSpeed"></output>
+              <input id="lineSpeed" type="range" min="1" max="15" step="1" />
             </div>
           </div>
         </section>
@@ -310,95 +305,82 @@
  * ========================================================================== */
 const CONFIG = {
   urls: {
-    // Vector field (2 bands: magnitude, direction). Set to "" to derive the flow from the water level instead.
-    flow:        "https://tiledimageservices5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/MagDir_5160_wgs/ImageServer",
-    // Flood boundary polygon: the water is clipped exactly along it. Set to "" to use the raster mask instead.
-    floodExtent: "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/ZC_5160/FeatureServer/0",
-    waterLevel:  "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/teren_hladina5160/ImageServer",
-    dtm:         "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/dtm1m_wgs_test1_3/ImageServer",
-    basemap:     "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/zakladni_mapa_3D_model/VectorTileServer",
-    buildings:   "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/budovy3D_2020_2/SceneServer/layers/0",
-    bridges:     "https://services5.arcgis.com/SBTXIEUGWbqzUecw/ArcGIS/rest/services/Mosty3D_2020/SceneServer/layers/0",
-    floodWalls:  "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/PPO_Q2002_3D/SceneServer/layers/0"
+    flowRaster:    "https://tiledimageservices5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/MagDir_5160_wgs/ImageServer",
+    floodBoundary: "https://services5.arcgis.com/SBTXIEUGWbqzUecw/arcgis/rest/services/ZC_5160/FeatureServer/0",
+    waterLevel:    "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/teren_hladina5160/ImageServer",
+    dtm:           "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/dtm1m_wgs_test1_3/ImageServer",
+    basemap:       "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/zakladni_mapa_3D_model/VectorTileServer",
+    buildings:     "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/budovy3D_2020_2/SceneServer/layers/0",
+    bridges:       "https://services5.arcgis.com/SBTXIEUGWbqzUecw/ArcGIS/rest/services/Mosty3D_2020/SceneServer/layers/0",
+    floodBarriers: "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/PPO_Q2002_3D/SceneServer/layers/0"
   },
 
-  // --- how to read the MagDir raster -------------------------------------------
-  // Direction: degrees clockwise from north, pointing where the water goes ("flow-to").
-  //            (Checked against the downhill direction of the water surface: they agree.)
-  flowDirection: "flow-to",          // or "flow-from"
-  // Magnitude: in MagDir_5160 it grows ~linearly with depth (≈0.8 at 0.5 m, ≈20 at 10–15 m; mean 8, max 48), i.e. it
-  // behaves like unit discharge q = h·v [m²/s], not m/s. Dividing by (level − DTM) is unreliable because the LiDAR
-  // DTM holds the normal river surface, not the bed, so velocity comes from Manning for a wide channel instead:
-  //   q = h^(5/3)·√S / n   →   v = q / h = q^(2/5) · S^(3/10) / n^(3/5)
-  // Use "velocity" if your raster stores m/s.
-  flowMagnitude: "unit-discharge",   // or "velocity"
-  energySlope: 0.0004,               // typical water-surface slope of the Vltava in Prague during the flood
+  // --- reading the MagDir raster ------------------------------------------------
+  // Direction: degrees clockwise from north, pointing where the water goes (checked against the downhill
+  // direction of the water surface).
+  flowDirection: "flow-to",
+  // Magnitude behaves like unit discharge q = h·v [m²/s] (≈0.8 at 0.5 m depth, ≈20 at 10–15 m). The LiDAR DTM holds
+  // the normal river surface, not the bed, so v = q/h is unreliable; Manning for a wide channel is used instead:
+  //   q = h^(5/3)·√S / n   →   v = q^(2/5) · S^(3/10) / n^(3/5).   Use "velocity" if a raster stores m/s.
+  flowMagnitude: "unit-discharge",
+  energySlope: 0.0004,       // typical water-surface slope of the Vltava in Prague during the flood
+  manningN: 0.035,
 
-  // Grid used for the water surface and the flow texture. Level 13 ≈ 19 m Web Mercator pixels (≈ 12 m on the ground).
-  // The visible edge is NOT limited by this: it comes from the flood polygon (mask pass) and the terrain's depth buffer.
-  dataLevel: 13,
-  minDepth: 0.15,            // m – (water level − DTM) must exceed this
-  maxWaterSlope: 0.003,      // water surface is nearly flat; terrain inside the level raster is not
-  growCells: 2,              // grow the flat-water mask into adjacent above-DTM cells (weirs, banks)
-  minComponentCells: 150,    // drop small isolated patches (cells) …
-  minComponentShare: 0.02,   // … and anything smaller than 2 % of the main water body
-  ringCells: 3,              // extend the surface this many cells beyond the wet area (polygon / terrain trim it)
-  maxSpeed: 6.0,             // m/s clamp
-  zOffset: 0.03,             // m – lift the surface slightly to avoid z-fighting
-  manningN: 0.035,           // Manning roughness (q → v conversion, and the fallback below)
+  // --- water surface grid -------------------------------------------------------
+  // Tile level of the grid behind the water surface and flow texture: 13 ≈ 12 m cells on the ground.
+  // The visible edge comes from the flood polygon (mask pass) and the terrain depth, not from this grid.
+  gridLevel: 13,
+  minDepth: 0.15,            // m – level must exceed the DTM by this to be trusted as water surface
+  ringCells: 3,              // the surface extends this many cells beyond the flooded cells (then trimmed)
+  maxSpeed: 6,               // m/s
+  zOffset: 0.03,             // m – lift against z-fighting
 
-  // Fallback only (no vector raster): flow along the regularised water-surface gradient, speed from Manning.
-  sorIterations: 350,
-
-  // Esri FlowRenderer on the MagDir raster (panel defaults)
+  // --- flow lines (Esri FlowRenderer) – panel defaults -------------------------------
   flowLines: {
-    // How the FlowRenderer reads MagDir's directions. "flow-from" animates the lines downstream for this raster
-    // (checked visually); the water shader reads the same values as "flow-to" via CONFIG.flowDirection.
-    representation: "flow-from",
-    color: "white",          // "white" | "silt" | "flow"
-    density: 0.8,
-    trailLength: 50,         // px
-    trailWidth: 4,           // px
+    representation: "flow-from",   // how the renderer reads MagDir: animates downstream for this raster
+    color: "white",                // "white" | "silt" | "flow"
+    density: 0.8,                  // above 1, extra layer copies are stacked (up to 3)
+    trailLength: 50,               // px
+    trailWidth: 4,                 // px
     flowSpeed: 7,
-    waterOpacity: 0.55,      // water opacity while flow lines are shown, so they read through it
-    groundOffset: 0.3        // m – the flood-surface ground sits this far below the water level
-  }
+    bold: false,                   // "Make lines stand out"
+    groundOffset: 1.0              // m – the flood-surface ground sits this far below the water level
+  },
+  // water opacity multiplier while the flow lines are shown (normal / "stand out")
+  waterUnderLines: { normal: 0.6, bold: 0.3 }
 };
 
-const FLOW_COLORS = {
-  white: [236, 238, 232, 0.9],   // staff white
-  silt:  [196, 162, 102, 0.95]   // silt
+const WATER_LOOKS = {
+  flood: { shallow: [0.62, 0.54, 0.40], deep: [0.44, 0.37, 0.25], opacity: 0.90 },
+  clear: { shallow: [0.30, 0.52, 0.48], deep: [0.07, 0.24, 0.30], opacity: 0.80 }
 };
-// "By flow": magnitude of MagDir (unit discharge, m²/s): mist → staff white → high-water red
-const FLOW_RAMP = [
+const LINE_COLORS = { white: [236, 238, 232], silt: [196, 162, 102] };
+// "By flow": MagDir magnitude (unit discharge, m²/s): mist → staff white → high-water red
+const LINE_RAMP = [
   { value: 0,  color: [147, 166, 173, 0.75] },
   { value: 8,  color: [236, 238, 232, 0.9] },
   { value: 30, color: [200, 70, 61, 1] }
 ];
-
-const STYLES = {
-  flood: { shallow: [0.62, 0.54, 0.40], deep: [0.44, 0.37, 0.25], opacity: 0.90 },
-  clear: { shallow: [0.30, 0.52, 0.48], deep: [0.07, 0.24, 0.30], opacity: 0.80 }
-};
+const BARRIER_COLOR = [200, 70, 61];      // high-water mark red from the panel palette
 
 /* ============================================================================
- * STATUS + GAUGE
+ * PANEL HELPERS
  * ========================================================================== */
-const panelEl = document.getElementById("panel");
-const statusEl = document.getElementById("status");
-const gaugeEl = document.getElementById("gaugeWater");
+const $ = (id) => document.getElementById(id);
+const panel = $("panel"), statusEl = $("status");
+
 function setStatus(text, progress = null, isError = false) {
   statusEl.textContent = text;
+  statusEl.hidden = !text;
   statusEl.classList.toggle("error", isError);
-  statusEl.hidden = false;
-  if (progress !== null) gaugeEl.style.setProperty("--level", `${(6 + 68 * Math.min(1, progress)).toFixed(1)}%`);
+  if (progress !== null) $("gaugeWater").style.setProperty("--level", `${(6 + 68 * Math.min(1, progress)).toFixed(1)}%`);
 }
-const nextFrame = () => new Promise((r) => setTimeout(r, 0));
-// numbers with a thin space between thousands (5 160) and a decimal point
+// thin space between thousands (5 160), decimal point
 const fmt = (v, d = 0) => {
   const [int, dec] = Number(v).toFixed(d).split(".");
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + (dec ? "." + dec : "");
 };
+const nextFrame = () => new Promise((r) => setTimeout(r, 0));
 
 /* ============================================================================
  * SDK MODULES
@@ -426,77 +408,9 @@ const [Map, Basemap, Ground, Camera, Extent, Mesh, ElevationLayer, BaseElevation
 /* ============================================================================
  * SCENE
  * ========================================================================== */
-const dtmLayer    = new ElevationLayer({ url: CONFIG.urls.dtm });
-const waterLayer  = new ElevationLayer({ url: CONFIG.urls.waterLevel });                                  // data only
-const flowLayer   = CONFIG.urls.flow ? new ImageryTileLayer({ url: CONFIG.urls.flow }) : null;            // data only
-const extentLayer = CONFIG.urls.floodExtent ? new FeatureLayer({ url: CONFIG.urls.floodExtent }) : null;  // data only
-
-// Flow lines: the Esri FlowRenderer on the same vector raster (displayed layer, hidden until switched on)
-function makeFlowRenderer(o) {
-  const byFlow = o.color === "flow";
-  return new FlowRenderer({
-    flowRepresentation: o.representation,
-    color: byFlow ? FLOW_COLORS.white : FLOW_COLORS[o.color],
-    density: o.density,
-    trailLength: o.trailLength,
-    trailWidth: o.trailWidth,
-    flowSpeed: o.flowSpeed,
-    trailCap: "round",
-    visualVariables: byFlow ? [{ type: "color", field: "Magnitude", stops: FLOW_RAMP }] : []
-  });
-}
-const flowLinesLayer = CONFIG.urls.flow ? new ImageryTileLayer({
-  url: CONFIG.urls.flow,
-  title: "Flow lines",
-  visible: false,
-  renderer: makeFlowRenderer(CONFIG.flowLines)
-}) : null;
-
-// Ground for the flow lines: the 1 m DTM, replaced inside the flood polygon by the flood surface
-// (teren_hladina5160, slightly lowered so the water shader stays on top). Raster layers in a SceneView are always
-// draped on the ground, so this is what puts the flow lines on the water surface instead of the river bed.
-const FloodSurfaceGround = BaseElevationLayer.createSubclass({
-  // set after construction: floodPath (Path2D in metres relative to pathOrigin), pathOrigin ([x, y] Web Mercator)
-  load() {
-    this._dtm = new ElevationLayer({ url: CONFIG.urls.dtm });
-    this._level = new ElevationLayer({ url: CONFIG.urls.waterLevel });
-    this.addResolvingPromise(Promise.all([this._dtm.load(), this._level.load()]).then(() => {
-      // only the levels the DTM actually has (its cache stops at maxScale)
-      const ti = this._dtm.tileInfo.clone();
-      const maxScale = this._dtm.sourceJSON?.maxScale;
-      if (maxScale) ti.lods = ti.lods.filter((l) => l.scale >= maxScale * 0.99);
-      this.tileInfo = ti;
-      this.spatialReference = this._dtm.spatialReference;
-      this.fullExtent = this._dtm.fullExtent;
-    }));
-  },
-  async fetchTile(level, row, col, options) {
-    const [dtm, lvl] = await Promise.all([
-      this._dtm.fetchTile(level, row, col, options),
-      this._level.fetchTile(level, row, col, options).catch(() => null)
-    ]);
-    if (!lvl || !this.floodPath) return dtm;
-    const lod = this.tileInfo.lods.find((l) => l.level === level);
-    const res = lod.resolution, ts = this.tileInfo.size[0], o = this.tileInfo.origin;
-    const x0 = o.x + col * ts * res - this.pathOrigin[0], y0 = o.y - row * ts * res - this.pathOrigin[1];
-    // rasterise the flood polygon onto this tile's samples (sample i sits at x0 + i·res)
-    const W = dtm.width, H = dtm.height;
-    const canvas = new OffscreenCanvas(W, H);
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.setTransform(1 / res, 0, 0, -1 / res, -x0 / res + 0.5, y0 / res + 0.5);
-    ctx.fillStyle = "#fff";
-    ctx.fill(this.floodPath, "evenodd");
-    const inside = ctx.getImageData(0, 0, W, H).data;
-    const v = dtm.values, lv = lvl.values, lnd = lvl.noDataValue, off = CONFIG.flowLines.groundOffset;
-    for (let i = 0; i < v.length; i++) {
-      if (inside[i * 4] < 128) continue;
-      const z = lv[i];
-      if (z !== lnd && z > -9000 && z < 9000) v[i] = z - off;
-    }
-    return dtm;
-  }
-});
-let floodGround = null;      // created once the flood polygon is loaded
+const dtmLayer   = new ElevationLayer({ url: CONFIG.urls.dtm });          // ground + data
+const levelLayer = new ElevationLayer({ url: CONFIG.urls.waterLevel });   // data (and the flood-surface ground)
+const flowRaster = new ImageryTileLayer({ url: CONFIG.urls.flowRaster }); // data (and the flow lines)
 
 const map = new Map({
   basemap: new Basemap({ baseLayers: [new VectorTileLayer({ url: CONFIG.urls.basemap })] }),
@@ -505,7 +419,7 @@ const map = new Map({
     new SceneLayer({ url: CONFIG.urls.buildings, title: "Buildings" }),
     new SceneLayer({ url: CONFIG.urls.bridges, title: "Bridges" }),
     new SceneLayer({
-      url: CONFIG.urls.floodWalls,
+      url: CONFIG.urls.floodBarriers,
       title: "Flood barriers (PPO Q2002)",
       renderer: {
         type: "simple",
@@ -513,13 +427,12 @@ const map = new Map({
           type: "mesh-3d",
           symbolLayers: [{
             type: "fill",
-            material: { color: [205, 92, 48] },
-            edges: { type: "solid", color: [70, 30, 15, 0.6], size: 0.6 }
+            material: { color: BARRIER_COLOR },
+            edges: { type: "solid", color: [110, 36, 30, 0.8], size: 0.6 }
           }]
         }
       }
-    }),
-    ...(flowLinesLayer ? [flowLinesLayer] : [])
+    })
   ]
 });
 
@@ -533,542 +446,340 @@ sceneEl.camera = new Camera({
 });
 await sceneEl.viewOnReady();
 const view = sceneEl.view;
-view.environment.lighting = {
-  type: "sun",
-  date: new Date("2026-07-15T15:30:00+02:00"),
-  directShadowsEnabled: true
-};
-window.floodDebug = { view };
+view.environment.lighting = { type: "sun", date: new Date("2026-07-15T15:30:00+02:00"), directShadowsEnabled: true };
 
 /* ============================================================================
- * 1) LOAD WATER LEVEL + DTM TILES INTO ONE GRID (Web Mercator)
+ * 1) DATA
  * ========================================================================== */
-async function loadGrid(level) {
-  await Promise.all([waterLayer.load(), dtmLayer.load()]);
-  const ti  = waterLayer.tileInfo;
-  const lod = ti.lods.find((l) => l.level === level);
-  if (!lod) throw new Error(`Level ${level} is not in the water-level tiling scheme.`);
-  const res = lod.resolution, ts = ti.size[0], ox = ti.origin.x, oy = ti.origin.y;
-  const ext = waterLayer.fullExtent;
-  const span = ts * res;
-  const c0 = Math.floor((ext.xmin - ox) / span), c1 = Math.floor((ext.xmax - ox) / span);
-  const r0 = Math.floor((oy - ext.ymax) / span), r1 = Math.floor((oy - ext.ymin) / span);
-  const W = (c1 - c0 + 1) * ts, H = (r1 - r0 + 1) * ts;
-  const surf = new Float32Array(W * H).fill(NaN);
-  const terr = new Float32Array(W * H).fill(NaN);
-  const NODATA = -999999;
+const R_EARTH = 6378137;
+const lonLatToMerc = (lon, lat) => [R_EARTH * lon * Math.PI / 180, R_EARTH * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))];
 
-  const total = (c1 - c0 + 1) * (r1 - r0 + 1) * 2;
-  let done = 0;
+// Flood boundary polygon(s) in Web Mercator, plus the scenario attributes
+async function loadFloodBoundary() {
+  const layer = new FeatureLayer({ url: CONFIG.urls.floodBoundary });
+  const { features } = await layer.queryFeatures({
+    where: "1=1", returnGeometry: true, outFields: ["*"], outSpatialReference: { wkid: 3857 }
+  });
+  const polygons = features.map((f) => f.geometry).filter(Boolean);
+  if (!polygons.length) throw new Error("The flood boundary layer has no polygons.");
+  const extent = polygons.slice(1).reduce((e, p) => e.union(p.extent), polygons[0].extent.clone());
+  return { polygons, extent, attributes: features[0].attributes };
+}
+
+// Water level and DTM on a common Web Mercator grid: tile level CONFIG.gridLevel, only the tiles covering `area`.
+// Samples sit on the tile-grid vertices: sample (i, j) is at (x0 + i·res, y0 − j·res).
+async function loadSurfaceGrid(area) {
+  await Promise.all([levelLayer.load(), dtmLayer.load()]);
+  const ti = levelLayer.tileInfo;
+  const lod = ti.lods.find((l) => l.level === CONFIG.gridLevel);
+  const res = lod.resolution, ts = ti.size[0], span = ts * res, ox = ti.origin.x, oy = ti.origin.y;
+  const c0 = Math.floor((area.xmin - ox) / span), c1 = Math.floor((area.xmax - ox) / span);
+  const r0 = Math.floor((oy - area.ymax) / span), r1 = Math.floor((oy - area.ymin) / span);
+  const w = (c1 - c0 + 1) * ts, h = (r1 - r0 + 1) * ts;
+  const level = new Float32Array(w * h).fill(NaN);
+  const terrain = new Float32Array(w * h).fill(NaN);
+
   const jobs = [];
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0; c <= c1; c++) {
-      for (const [layer, arr] of [[waterLayer, surf], [dtmLayer, terr]]) {
-        jobs.push(
-          layer.fetchTile(level, r, c, { noDataValue: NODATA })
-            .then((tile) => {
-              // Elevation tiles are (ts+1)×(ts+1) vertex grids (shared edge) – keep the first ts×ts samples.
-              const v = tile.values, tw = tile.width, nd = tile.noDataValue;
-              const nx = Math.min(ts, tw), ny = Math.min(ts, tile.height);
-              for (let y = 0; y < ny; y++) {
-                const dst = ((r - r0) * ts + y) * W + (c - c0) * ts;
-                const src = y * tw;
-                for (let x = 0; x < nx; x++) {
-                  const z = v[src + x];
-                  arr[dst + x] = (z === nd || z < -9000 || z > 9000) ? NaN : z;
-                }
-              }
-            })
-            .catch(() => { /* missing tile → stays NoData */ })
-            .finally(() => {
-              done++;
-              if (done % 6 === 0 || done === total) setStatus(`Loading terrain and water level (${done} of ${total} tiles)`, 0.55 * done / total);
-            })
-        );
-      }
+  let done = 0;
+  const total = (c1 - c0 + 1) * (r1 - r0 + 1) * 2;
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    for (const [layer, out] of [[levelLayer, level], [dtmLayer, terrain]]) {
+      jobs.push(layer.fetchTile(CONFIG.gridLevel, r, c, { noDataValue: -999999 })
+        .then((tile) => {
+          // elevation tiles are (ts+1)×(ts+1) vertex grids with a shared edge: keep the first ts×ts samples
+          const v = tile.values, tw = tile.width, nd = tile.noDataValue;
+          const nx = Math.min(ts, tw), ny = Math.min(ts, tile.height);
+          for (let y = 0; y < ny; y++) {
+            const dst = ((r - r0) * ts + y) * w + (c - c0) * ts;
+            for (let x = 0; x < nx; x++) {
+              const z = v[y * tw + x];
+              out[dst + x] = z === nd || !(Math.abs(z) < 9000) ? NaN : z;
+            }
+          }
+        })
+        .catch(() => {})                                      // missing tile → NoData
+        .finally(() => {
+          if (++done % 6 === 0 || done === total) setStatus(`Loading terrain and water level (${done} of ${total} tiles)`, 0.15 + 0.5 * done / total);
+        }));
     }
   }
   await Promise.all(jobs);
-  return {
-    W, H, res, surf, terr, ext,
-    x0: ox + c0 * span,          // x of sample column 0 (Web Mercator)
-    y0: oy - r0 * span           // y of sample row 0
-  };
+
+  const x0 = ox + c0 * span, y0 = oy - r0 * span;
+  const lat = 2 * Math.atan(Math.exp((y0 - h * res / 2) / R_EARTH)) - Math.PI / 2;
+  return { w, h, res, x0, y0, cellM: res * Math.cos(lat), level, terrain };
+}
+
+// MagDir resampled onto the grid (pixel centres = grid samples)
+async function loadVectorField(g) {
+  const half = g.res / 2;
+  const extent = new Extent({
+    xmin: g.x0 - half, xmax: g.x0 + (g.w - 1) * g.res + half,
+    ymin: g.y0 - (g.h - 1) * g.res - half, ymax: g.y0 + half,
+    spatialReference: { wkid: 3857 }
+  });
+  const { pixelBlock } = await flowRaster.fetchPixels(extent, g.w, g.h);
+  if (!pixelBlock || pixelBlock.pixels.length < 2) throw new Error("The flow raster returned fewer than 2 bands.");
+  return { mag: pixelBlock.pixels[0], dir: pixelBlock.pixels[1], mask: pixelBlock.mask };
+}
+
+// 1 where the grid sample is inside the flood polygon (canvas fill; even-odd handles the holes)
+function rasterizePolygons(polygons, g) {
+  const ctx = new OffscreenCanvas(g.w, g.h).getContext("2d", { willReadFrequently: true });
+  ctx.setTransform(1 / g.res, 0, 0, -1 / g.res, -g.x0 / g.res + 0.5, g.y0 / g.res + 0.5);
+  ctx.fillStyle = "#fff";
+  ctx.fill(polygonPath(polygons), "evenodd");
+  const px = ctx.getImageData(0, 0, g.w, g.h).data;
+  const inside = new Uint8Array(g.w * g.h);
+  for (let i = 0; i < inside.length; i++) inside[i] = px[i * 4] > 127 ? 1 : 0;
+  return inside;
+}
+
+function polygonPath(polygons, origin = [0, 0]) {
+  const path = new Path2D();
+  for (const p of polygons) for (const ring of p.rings) {
+    ring.forEach(([x, y], k) => (k ? path.lineTo(x - origin[0], y - origin[1]) : path.moveTo(x - origin[0], y - origin[1])));
+    path.closePath();
+  }
+  return path;
 }
 
 /* ============================================================================
- * 2) HELPERS
+ * 2) GRID PROCESSING
  * ========================================================================== */
-function boxBlur(a, W, H, r, tmp) {
-  for (let y = 0; y < H; y++) {
-    const o = y * W; let s = 0;
-    for (let x = 0; x <= r && x < W; x++) s += a[o + x];
-    for (let x = 0; x < W; x++) {
+// separable box blur (in place)
+function boxBlur(a, w, h, r, tmp) {
+  for (let y = 0; y < h; y++) {
+    const o = y * w; let s = 0;
+    for (let x = 0; x <= r && x < w; x++) s += a[o + x];
+    for (let x = 0; x < w; x++) {
       tmp[o + x] = s;
-      const xa = x + r + 1, xr = x - r;
-      if (xa < W) s += a[o + xa];
-      if (xr >= 0) s -= a[o + xr];
+      if (x + r + 1 < w) s += a[o + x + r + 1];
+      if (x - r >= 0) s -= a[o + x - r];
     }
   }
-  for (let x = 0; x < W; x++) {
+  for (let x = 0; x < w; x++) {
     let s = 0;
-    for (let y = 0; y <= r && y < H; y++) s += tmp[y * W + x];
-    for (let y = 0; y < H; y++) {
-      a[y * W + x] = s;
-      const ya = y + r + 1, yr = y - r;
-      if (ya < H) s += tmp[ya * W + x];
-      if (yr >= 0) s -= tmp[yr * W + x];
+    for (let y = 0; y <= r && y < h; y++) s += tmp[y * w + x];
+    for (let y = 0; y < h; y++) {
+      a[y * w + x] = s;
+      if (y + r + 1 < h) s += tmp[(y + r + 1) * w + x];
+      if (y - r >= 0) s -= tmp[(y - r) * w + x];
     }
   }
 }
 
-// Normalised convolution: average of `src` over masked cells only; also extrapolates a little beyond the mask.
-function maskedBlur(src, mask, W, H, r, passes) {
-  const N = W * H;
+// average of `src` over masked cells (normalised convolution); extends ~r·passes cells beyond the mask, NaN further out
+function maskedBlur(src, mask, w, h, r, passes) {
+  const n = w * h;
   let ref = 0, cnt = 0;
-  for (let i = 0; i < N; i++) if (mask[i]) { ref += src[i]; cnt++; }
-  ref = cnt ? ref / cnt : 0;
-  const num = new Float32Array(N), den = new Float32Array(N), tmp = new Float32Array(N);
-  for (let i = 0; i < N; i++) if (mask[i]) { num[i] = src[i] - ref; den[i] = 1; }
-  for (let p = 0; p < passes; p++) { boxBlur(num, W, H, r, tmp); boxBlur(den, W, H, r, tmp); }
-  const out = new Float32Array(N);
-  for (let i = 0; i < N; i++) out[i] = den[i] > 1e-4 ? num[i] / den[i] + ref : NaN;
-  return out;
+  for (let i = 0; i < n; i++) if (mask[i]) { ref += src[i]; cnt++; }
+  ref = cnt ? ref / cnt : 0;                                  // subtracting a reference keeps float32 sums precise
+  const num = new Float32Array(n), den = new Float32Array(n), tmp = new Float32Array(n);
+  for (let i = 0; i < n; i++) if (mask[i]) { num[i] = src[i] - ref; den[i] = 1; }
+  for (let p = 0; p < passes; p++) { boxBlur(num, w, h, r, tmp); boxBlur(den, w, h, r, tmp); }
+  for (let i = 0; i < n; i++) num[i] = den[i] > 1e-4 ? num[i] / den[i] + ref : NaN;
+  return num;
 }
 
-function dilate8(mask, w, h, times) {
+function dilate(mask, w, h, times) {
   let m = mask;
-  for (let r = 0; r < times; r++) {
+  for (let k = 0; k < times; k++) {
     const next = m.slice();
     for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
       const i = y * w + x;
-      if (m[i]) continue;
-      if (m[i - 1] || m[i + 1] || m[i - w] || m[i + w] || m[i - w - 1] || m[i - w + 1] || m[i + w - 1] || m[i + w + 1]) next[i] = 1;
+      if (!m[i] && (m[i - 1] || m[i + 1] || m[i - w] || m[i + w] || m[i - w - 1] || m[i - w + 1] || m[i + w - 1] || m[i + w + 1])) next[i] = 1;
     }
     m = next;
   }
   return m;
 }
 
-const lonLatToMerc = (lon, lat) => [
-  6378137 * lon * Math.PI / 180,
-  6378137 * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))
-];
+const smoothstep = (e0, e1, t) => { const k = Math.min(1, Math.max(0, (t - e0) / (e1 - e0))); return k * k * (3 - 2 * k); };
 
-/* ============================================================================
- * 3) WATER DOMAIN FROM THE LEVEL RASTER (+ crop to the area of interest)
- * ========================================================================== */
-// teren_hladina5160 = "terrain of the hydraulic model + water surface". Outside the river it differs from the
-// 1 m DTM by up to tens of metres on slopes, so (level − DTM) > 0 alone is not enough: water is where the level is
-// above the DTM AND nearly flat ("core"), grown by a few cells into above-DTM neighbours to close gaps at weirs.
-function levelWaterMask(g) {
-  const { W, H, surf, terr } = g;
-  const N = W * H;
-  const dx0 = g.res * Math.cos(2 * Math.atan(Math.exp((g.y0 - H * g.res / 2) / 6378137)) - Math.PI / 2);
-  const above = (i) => surf[i] - terr[i] > CONFIG.minDepth;      // NaN-safe
-  let wet0 = new Uint8Array(N);
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-    const i = y * W + x;
-    if (!above(i)) continue;
-    const gx = (surf[i + 1] - surf[i - 1]) / (2 * dx0), gy = (surf[i + W] - surf[i - W]) / (2 * dx0);
-    if (Math.hypot(gx, gy) < CONFIG.maxWaterSlope) wet0[i] = 1;
-  }
-  const core = wet0.slice();
-  for (let it = 0; it < CONFIG.growCells; it++) {
-    const next = wet0.slice();
-    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (wet0[i] || !above(i)) continue;
-      if (wet0[i - 1] || wet0[i + 1] || wet0[i - W] || wet0[i + W] ||
-          wet0[i - W - 1] || wet0[i - W + 1] || wet0[i + W - 1] || wet0[i + W + 1]) next[i] = 1;
-    }
-    wet0 = next;
-  }
-  // keep the main connected water body (and anything comparably large)
-  const label = new Int32Array(N).fill(-1), stack = new Int32Array(N), sizes = [];
-  for (let i = 0; i < N; i++) {
-    if (!wet0[i] || label[i] >= 0) continue;
-    let sp = 0, size = 0;
-    stack[sp++] = i; label[i] = sizes.length;
-    while (sp) {
-      const k = stack[--sp]; size++;
-      for (const j of [k - 1, k + 1, k - W, k + W]) if (wet0[j] && label[j] < 0) { label[j] = sizes.length; stack[sp++] = j; }
-    }
-    sizes.push(size);
-  }
-  const largest = sizes.reduce((a, b) => Math.max(a, b), 0);
-  const minSize = Math.max(CONFIG.minComponentCells, CONFIG.minComponentShare * largest);
-  const wet = new Uint8Array(N);
-  for (let i = 0; i < N; i++) if (label[i] >= 0 && sizes[label[i]] >= minSize) wet[i] = 1;
-  for (let i = 0; i < N; i++) core[i] &= wet[i];
-  return { wet, core };
-}
+// Wet cells, water level, depth and velocity → flow texture (RG velocity m/s east/north, B depth m, A foam)
+function buildFlowField(g, vec, inside) {
+  const { w, h, level: S, terrain: T, cellM } = g;
+  const n = w * h;
 
-function cropDomain(g, lw, bbox) {
-  const { W, H } = g;
-  let bx0, by0, bx1, by1;
-  if (bbox) {                                   // explicit extent (Web Mercator)
-    bx0 = Math.floor((bbox.xmin - g.x0) / g.res); bx1 = Math.ceil((bbox.xmax - g.x0) / g.res);
-    by0 = Math.floor((g.y0 - bbox.ymax) / g.res); by1 = Math.ceil((g.y0 - bbox.ymin) / g.res);
-  } else {                                      // bounding box of the level-based water mask
-    bx0 = W; by0 = H; bx1 = -1; by1 = -1;
-    for (let i = 0; i < W * H; i++) if (lw.wet[i]) {
-      const x = i % W, y = (i / W) | 0;
-      if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
-    }
-    if (bx1 < 0) throw new Error("No water found in the water-level raster.");
-  }
-  const pad = CONFIG.ringCells + 8;
-  bx0 = Math.max(0, bx0 - pad); by0 = Math.max(0, by0 - pad);
-  bx1 = Math.min(W - 1, bx1 + pad); by1 = Math.min(H - 1, by1 + pad);
-  const w = bx1 - bx0 + 1, h = by1 - by0 + 1, n = w * h;
-  const crop = (arr, Ctor) => {
-    const out = new Ctor(n);
-    for (let y = 0; y < h; y++) out.set(arr.subarray((y + by0) * W + bx0, (y + by0) * W + bx0 + w), y * w);
-    return out;
-  };
-  const res = g.res;
-  const gx0 = g.x0 + bx0 * res, gy0 = g.y0 - by0 * res;
-  const cx = (x) => gx0 + x * res;               // samples sit on tile-grid vertices
-  const cy = (y) => gy0 - y * res;
-  const latC = 2 * Math.atan(Math.exp(cy(h / 2) / 6378137)) - Math.PI / 2;
-  return {
-    w, h, n, res, cx, cy, gx0, gy0, ext: g.ext,
-    dxReal: res * Math.cos(latC),                // ground metres per cell
-    S: crop(g.surf, Float32Array), T: crop(g.terr, Float32Array),
-    levelWet: crop(lw.wet, Uint8Array), core: crop(lw.core, Uint8Array)
-  };
-}
-
-function extentToMerc(e) {
-  if (e.spatialReference.isWGS84 || e.spatialReference.wkid === 4326) {
-    const [xmin, ymin] = lonLatToMerc(e.xmin, e.ymin), [xmax, ymax] = lonLatToMerc(e.xmax, e.ymax);
-    return { xmin, ymin, xmax, ymax };
-  }
-  return { xmin: e.xmin, ymin: e.ymin, xmax: e.xmax, ymax: e.ymax };
-}
-
-/* ============================================================================
- * 4) VECTOR FIELD: fetch MagDir resampled onto the same grid
- * ========================================================================== */
-async function loadVectorField(d) {
-  const half = d.res / 2;                        // pixel centres coincide with our grid samples
-  const extent = new Extent({
-    xmin: d.cx(0) - half, xmax: d.cx(d.w - 1) + half,
-    ymin: d.cy(d.h - 1) - half, ymax: d.cy(0) + half,
-    spatialReference: { wkid: 3857 }
-  });
-  const { pixelBlock: pb } = await flowLayer.fetchPixels(extent, d.w, d.h);
-  if (!pb || pb.pixels.length < 2) throw new Error("The flow raster returned fewer than 2 bands.");
-  return { mag: pb.pixels[0], dir: pb.pixels[1], mask: pb.mask, w: pb.width, h: pb.height };
-}
-
-/* ============================================================================
- * 5) FLOOD BOUNDARY POLYGON: triangulated for the mask pass, rasterised for the grid
- * ========================================================================== */
-async function loadFloodExtent() {
-  const fs = await extentLayer.queryFeatures({
-    where: "1=1", returnGeometry: true, outFields: ["*"], outSpatialReference: { wkid: 3857 }
-  });
-  if (!fs.features.length) throw new Error("The flood boundary layer has no features.");
-  const polys = fs.features.map((f) => f.geometry).filter(Boolean);
-  const tris = polys.map((p) => Mesh.createFromPolygon(p));      // SDK triangulation (holes handled)
-  return { polys, tris, attributes: fs.features[0].attributes };
-}
-
-// 1 where the grid sample lies inside the polygon (canvas fill, even-odd handles holes)
-function rasterizePolygons(polys, d) {
-  const canvas = document.createElement("canvas");
-  canvas.width = d.w; canvas.height = d.h;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  const ox = d.cx(0) - d.res / 2, oy = d.cy(0) + d.res / 2;   // pixel (x, y) centre ↔ grid sample (x, y)
-  ctx.fillStyle = "#fff";
-  for (const p of polys) {
-    const path = new Path2D();
-    for (const ring of p.rings) {
-      ring.forEach(([X, Y], k) => {
-        const px = (X - ox) / d.res, py = (oy - Y) / d.res;
-        if (k === 0) path.moveTo(px, py); else path.lineTo(px, py);
-      });
-      path.closePath();
-    }
-    ctx.fill(path, "evenodd");
-  }
-  const img = ctx.getImageData(0, 0, d.w, d.h).data;
-  const inside = new Uint8Array(d.w * d.h);
-  for (let i = 0; i < inside.length; i++) inside[i] = img[i * 4] > 127 ? 1 : 0;
-  return inside;
-}
-
-/* ============================================================================
- * 6) FLOW FIELD → TEXTURE  (RG = velocity m/s east/north, B = depth m, A = foam)
- * ========================================================================== */
-function computeFlowField(d, vec, inside) {
-  const { w, h, n, S, T, dxReal } = d;
-
-  // --- wet cells ------------------------------------------------------------------
-  let wet, core;
-  if (vec || inside) {
-    wet = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      if (!(T[i] === T[i])) continue;
-      const m = vec ? vec.mag[i] : NaN;
-      const vecWet = vec && (!vec.mask || vec.mask[i]) && m > 1e-4 && m < 1e6;
-      if (vecWet || (inside && inside[i])) wet[i] = 1;
-    }
-    // inside the modelled flood area the level raster is the water surface; trust it wherever it is above the DTM
-    core = new Uint8Array(n);
-    for (let i = 0; i < n; i++) core[i] = wet[i] && (d.core[i] || S[i] - T[i] > CONFIG.minDepth) ? 1 : 0;
-  } else {
-    wet = d.levelWet; core = d.core;
-  }
-  for (let x = 0; x < w; x++) { wet[x] = 0; wet[(h - 1) * w + x] = 0; }
-  for (let y = 0; y < h; y++) { wet[y * w] = 0; wet[y * w + w - 1] = 0; }
+  // wet = inside the flood polygon or covered by the vector raster
+  const vecOk = (i) => vec && (!vec.mask || vec.mask[i]) && vec.mag[i] > 1e-4 && vec.mag[i] < 1e6;   // NoData = 1.79e308
+  const wet = new Uint8Array(n), core = new Uint8Array(n);
   let nWet = 0;
-  for (let i = 0; i < n; i++) nWet += wet[i];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (!(T[i] === T[i]) || !((inside && inside[i]) || vecOk(i))) continue;
+    wet[i] = 1; nWet++;
+    if (S[i] - T[i] > CONFIG.minDepth) core[i] = 1;          // the level raster is the water surface here
+  }
   if (!nWet) throw new Error("No flooded cells were found.");
 
-  // --- water level (trusted on the core, extrapolated elsewhere) and depth --------------
-  const reach = CONFIG.growCells + CONFIG.ringCells + 2;
-  const Ws = maskedBlur(S, core, w, h, 1, reach);
-  const WsWide = maskedBlur(S, core, w, h, 4, 3);          // far-reaching fallback for polygon vertices
+  // water level (smoothed, extrapolated over the ring) and a far-reaching version for the polygon vertices
+  const Ws = maskedBlur(S, core, w, h, 1, CONFIG.ringCells + 2);
+  const WsWide = maskedBlur(S, core, w, h, 4, 3);
   const depth = new Float32Array(n);
   for (let i = 0; i < n; i++) depth[i] = wet[i] && Ws[i] === Ws[i] ? Math.min(20, Math.max(0, Ws[i] - T[i])) : 0;
 
-  // --- velocity ---------------------------------------------------------------------
-  const vx = new Float32Array(n), vy = new Float32Array(n), slope = new Float32Array(n);
-  let velMask = wet;                              // cells whose velocity is known (blur source)
+  // velocity
+  const vx = new Float32Array(n), vy = new Float32Array(n), known = new Uint8Array(n);
   if (vec) {
     const toward = CONFIG.flowDirection === "flow-from" ? -1 : 1;
-    const isQ = CONFIG.flowMagnitude === "unit-discharge";
     const kq = Math.pow(CONFIG.energySlope, 0.3) / Math.pow(CONFIG.manningN, 0.6);
-    velMask = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
-      if (!wet[i]) continue;
-      // masked pixels hold the raster's NoData (1.79e308); polygon-only cells get their velocity from neighbours
-      if (vec.mask && !vec.mask[i]) continue;
-      let v = vec.mag[i];
-      const dir = vec.dir[i];
-      if (!(v >= 0 && v < 1e6) || !(Math.abs(dir) < 1e4)) continue;
-      velMask[i] = 1;
-      if (isQ) v = kq * Math.pow(v, 0.4);
-      v = Math.min(v, CONFIG.maxSpeed);
-      const a = dir * Math.PI / 180;            // clockwise from north
-      vx[i] = toward * Math.sin(a) * v;
-      vy[i] = toward * Math.cos(a) * v;
+      if (!wet[i] || !vecOk(i) || !(Math.abs(vec.dir[i]) < 1e4)) continue;
+      const v = Math.min(CONFIG.maxSpeed, CONFIG.flowMagnitude === "unit-discharge" ? kq * Math.pow(vec.mag[i], 0.4) : vec.mag[i]);
+      const a = vec.dir[i] * Math.PI / 180;                   // clockwise from north
+      vx[i] = toward * Math.sin(a) * v; vy[i] = toward * Math.cos(a) * v; known[i] = 1;
     }
   } else {
-    // Fallback: regularised water-surface potential div(h·grad φ) = 0 (no flow through banks,
-    // measured level kept where the river leaves the data), direction −grad φ, speed from Manning.
-    const phi = Float64Array.from(Ws, (v) => (v === v ? v : 0));
-    const ext = d.ext, edge = 3 * d.res, interior = [];
+    // fallback without the flow raster: down the smoothed water-surface slope, speed from Manning
     for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
       const i = y * w + x;
       if (!wet[i]) continue;
-      const X = d.cx(x), Y = d.cy(y);
-      const atEdge = X - ext.xmin < edge || ext.xmax - X < edge || Y - ext.ymin < edge || ext.ymax - Y < edge;
-      const atDataEdge = !(S[i - 1] === S[i - 1]) || !(S[i + 1] === S[i + 1]) || !(S[i - w] === S[i - w]) || !(S[i + w] === S[i + w]);
-      if (!atEdge && !atDataEdge) interior.push(i);
-    }
-    const idx = Int32Array.from(interior);
-    const hw = Float32Array.from(depth, (v) => Math.max(v, 0.05));
-    for (let it = 0; it < CONFIG.sorIterations; it++) {
-      for (let k = 0; k < idx.length; k++) {
-        const i = idx[k], hi = hw[i];
-        let sum = 0, ws = 0, j, wgt;
-        j = i - 1; if (wet[j]) { wgt = hi + hw[j]; sum += wgt * phi[j]; ws += wgt; }
-        j = i + 1; if (wet[j]) { wgt = hi + hw[j]; sum += wgt * phi[j]; ws += wgt; }
-        j = i - w; if (wet[j]) { wgt = hi + hw[j]; sum += wgt * phi[j]; ws += wgt; }
-        j = i + w; if (wet[j]) { wgt = hi + hw[j]; sum += wgt * phi[j]; ws += wgt; }
-        if (ws > 0) phi[i] += 1.7 * (sum / ws - phi[i]);
-      }
-    }
-    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      if (!wet[i]) continue;
-      const e = wet[i + 1] ? phi[i + 1] : phi[i], wv = wet[i - 1] ? phi[i - 1] : phi[i];
-      const nn = wet[i - w] ? phi[i - w] : phi[i], s = wet[i + w] ? phi[i + w] : phi[i];
-      const de = wet[i + 1] + wet[i - 1], dn = wet[i - w] + wet[i + w];
-      const gx = de ? (e - wv) / (de * dxReal) : 0, gy = dn ? (nn - s) / (dn * dxReal) : 0;
-      const Sg = Math.hypot(gx, gy);
-      slope[i] = Sg;
-      if (Sg < 1e-7) continue;
-      const v = Math.min(CONFIG.maxSpeed, (1 / CONFIG.manningN) * Math.pow(depth[i], 2 / 3) * Math.sqrt(Math.min(Sg, 0.05)));
-      vx[i] = -gx / Sg * v; vy[i] = -gy / Sg * v;
+      const at = (j) => (WsWide[j] === WsWide[j] ? WsWide[j] : WsWide[i]);
+      const gx = (at(i + 1) - at(i - 1)) / (2 * cellM), gy = (at(i - w) - at(i + w)) / (2 * cellM);
+      const slope = Math.hypot(gx, gy);
+      if (!(slope > 1e-7)) continue;
+      const v = Math.min(CONFIG.maxSpeed, Math.pow(depth[i], 2 / 3) * Math.sqrt(Math.min(slope, 0.05)) / CONFIG.manningN);
+      vx[i] = -gx / slope * v; vy[i] = -gy / slope * v; known[i] = 1;
     }
   }
-  // light smoothing; cells without a known velocity take it from up to ~3 cells around
-  let vxs = maskedBlur(vx, velMask, w, h, 1, 1), vys = maskedBlur(vy, velMask, w, h, 1, 1);
-  if (velMask !== wet) {
-    const vxw = maskedBlur(vx, velMask, w, h, 1, 3), vyw = maskedBlur(vy, velMask, w, h, 1, 3);
-    for (let i = 0; i < n; i++) {
-      if (!(vxs[i] === vxs[i])) { vxs[i] = vxw[i] === vxw[i] ? vxw[i] : 0; vys[i] = vyw[i] === vyw[i] ? vyw[i] : 0; }
-    }
+  // light smoothing; wet cells without a known velocity take it from up to 3 cells around
+  const vxs = maskedBlur(vx, known, w, h, 1, 1), vys = maskedBlur(vy, known, w, h, 1, 1);
+  let gaps = false;
+  for (let i = 0; i < n && !gaps; i++) gaps = wet[i] && !(vxs[i] === vxs[i]);
+  if (gaps) {
+    const vxw = maskedBlur(vx, known, w, h, 1, 3), vyw = maskedBlur(vy, known, w, h, 1, 3);
+    for (let i = 0; i < n; i++) if (!(vxs[i] === vxs[i])) { vxs[i] = vxw[i] || 0; vys[i] = vyw[i] || 0; }
   }
 
-  // --- foam: fast water, sharp speed changes (weirs, piers, hydraulic jumps) ------------
-  const smooth = (e0, e1, t) => { const k = Math.min(1, Math.max(0, (t - e0) / (e1 - e0))); return k * k * (3 - 2 * k); };
-  const sp = new Float32Array(n);
-  for (let i = 0; i < n; i++) sp[i] = wet[i] ? Math.hypot(vxs[i], vys[i]) : 0;
+  // speed, statistics, foam (fast water and sharp speed changes: weirs, piers)
+  const speed = new Float32Array(n);
+  let vSum = 0, vMax = 0;
+  for (let i = 0; i < n; i++) if (wet[i]) { speed[i] = Math.hypot(vxs[i], vys[i]) || 0; vSum += speed[i]; vMax = Math.max(vMax, speed[i]); }
   const foamRaw = new Float32Array(n);
-  let vMax = 0, vSum = 0;
   for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
     const i = y * w + x;
     if (!wet[i]) continue;
-    const s = sp[i];
-    vMax = Math.max(vMax, s); vSum += s;
-    const gsx = (wet[i + 1] && wet[i - 1]) ? (sp[i + 1] - sp[i - 1]) / (2 * dxReal) : 0;
-    const gsy = (wet[i + w] && wet[i - w]) ? (sp[i + w] - sp[i - w]) / (2 * dxReal) : 0;
-    foamRaw[i] = Math.min(1,
-      0.8 * smooth(0.04, 0.15, Math.hypot(gsx, gsy)) +   // speed changes by ~1 m/s over 10–25 m
-      0.6 * smooth(2.3, 3.4, s) +
-      smooth(0.004, 0.025, slope[i]));                    // steep surface (fallback mode only)
+    const gx = wet[i + 1] && wet[i - 1] ? (speed[i + 1] - speed[i - 1]) / (2 * cellM) : 0;
+    const gy = wet[i + w] && wet[i - w] ? (speed[i + w] - speed[i - w]) / (2 * cellM) : 0;
+    foamRaw[i] = Math.min(1, 0.8 * smoothstep(0.04, 0.15, Math.hypot(gx, gy)) + 0.6 * smoothstep(2.3, 3.4, speed[i]));
   }
   const foam = maskedBlur(foamRaw, wet, w, h, 1, 1);
 
-  // --- mesh mask: wet + ring -------------------------------------------------------------
-  const meshMask = dilate8(wet, w, h, CONFIG.ringCells);
-  for (let i = 0; i < n; i++) if (meshMask[i] && !(Ws[i] === Ws[i])) meshMask[i] = 0;
-
-  // Without a flood polygon, dry cells whose ground is BELOW the water level (behind flood walls, or outside the
-  // modelled flood) are flagged and the shader cuts the water off halfway towards them. With the polygon, the
-  // mask pass gives the exact boundary instead, so no flags are needed.
-  const dryLow = new Uint8Array(n);
-  if (!inside) {
-    for (let i = 0; i < n; i++) {
-      if (meshMask[i] && !wet[i] && T[i] === T[i] && T[i] < Ws[i] - 0.05) dryLow[i] = 1;
-    }
-  }
-
+  // surface = wet cells + ring (trimmed later by the polygon mask and the terrain)
+  const surface = dilate(wet, w, h, CONFIG.ringCells);
   const tex = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
-    const ok = meshMask[i];
-    tex[i * 4]     = ok && vxs[i] === vxs[i] ? vxs[i] : 0;
-    tex[i * 4 + 1] = ok && vys[i] === vys[i] ? vys[i] : 0;
-    tex[i * 4 + 2] = wet[i] ? depth[i] : 0;
-    tex[i * 4 + 3] = ok && foam[i] === foam[i] ? foam[i] : 0;
+    if (!(Ws[i] === Ws[i])) { surface[i] = 0; continue; }
+    if (!surface[i]) continue;
+    tex[i * 4]     = vxs[i] || 0;
+    tex[i * 4 + 1] = vys[i] || 0;
+    tex[i * 4 + 2] = depth[i];
+    tex[i * 4 + 3] = foam[i] || 0;
   }
-  const stats = {
-    source: vec ? "MagDir vector raster" : "derived from the water level",
-    areaKm2: nWet * dxReal * dxReal / 1e6, vMax, vMean: vSum / nWet, cellM: dxReal
-  };
-  console.info("[flood] stats", stats);
 
-  // water level at any point (bilinear), used for the polygon's vertices
-  const level = (X, Y) => {
-    const fx = (X - d.gx0) / d.res, fy = (d.gy0 - Y) / d.res;
+  // water level anywhere (bilinear), for the polygon vertices
+  const levelAt = (X, Y) => {
+    const fx = (X - g.x0) / g.res, fy = (g.y0 - Y) / g.res;
     const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
     let sum = 0, wsum = 0;
     for (const [xx, yy, wt] of [[x0, y0, (1 - tx) * (1 - ty)], [x0 + 1, y0, tx * (1 - ty)], [x0, y0 + 1, (1 - tx) * ty], [x0 + 1, y0 + 1, tx * ty]]) {
-      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-      let z = Ws[yy * w + xx];
-      if (!(z === z)) z = WsWide[yy * w + xx];
-      if (z === z && wt > 0) { sum += wt * z; wsum += wt; }
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h || wt <= 0) continue;
+      const j = yy * w + xx, z = Ws[j] === Ws[j] ? Ws[j] : WsWide[j];
+      if (z === z) { sum += wt * z; wsum += wt; }
     }
     return wsum > 0 ? sum / wsum : NaN;
   };
-  return { w, h, wet, meshMask, dryLow, Ws, tex, cx: d.cx, cy: d.cy, level, stats };
+
+  return {
+    w, h, surface, Ws, tex, levelAt,
+    stats: { areaKm2: nWet * cellM * cellM / 1e6, vMean: vSum / nWet, vMax, fromRaster: !!vec }
+  };
 }
 
 /* ============================================================================
- * 7) WATER SURFACE MESH IN A LOCAL (ENU) FRAME
+ * 3) GEOMETRY IN A LOCAL (ENU) FRAME
  * ========================================================================== */
-function buildMesh(f) {
-  const { w, h, meshMask, dryLow, Ws, cx, cy } = f;
-  const n = w * h;
-  const vid = new Int32Array(n).fill(-1);
-  let nv = 0;
-  for (let i = 0; i < n; i++) if (meshMask[i]) vid[i] = nv++;
-
-  const merc = new Float64Array(nv * 3);
-  const uv = new Float32Array(nv * 2);
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, zSum = 0;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const v = vid[y * w + x];
-    if (v < 0) continue;
-    const X = cx(x), Y = cy(y), Z = Ws[y * w + x] + CONFIG.zOffset;
-    merc[v * 3] = X; merc[v * 3 + 1] = Y; merc[v * 3 + 2] = Z;
-    uv[v * 2] = (x + 0.5) / w; uv[v * 2 + 1] = (y + 0.5) / h;
-    minX = Math.min(minX, X); maxX = Math.max(maxX, X);
-    minY = Math.min(minY, Y); maxY = Math.max(maxY, Y); zSum += Z;
-  }
-
-  const ind = [];
-  for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
-    const i = y * w + x;
-    const a = vid[i], b = vid[i + 1], c = vid[i + w], d = vid[i + w + 1];
-    const cnt = (a >= 0) + (b >= 0) + (c >= 0) + (d >= 0);
-    if (cnt === 4) ind.push(a, c, b, b, c, d);
-    else if (cnt === 3) {
-      const t = [a, b, d, c].filter((q) => q >= 0);
-      ind.push(t[0], t[1], t[2]);
+// Vertices are stored in metres around a local origin (float32-safe); the large ECEF translation is folded into
+// the model-view matrix in double precision every frame.
+function makeLocalFrame(originMerc) {
+  const T = webgl.renderCoordinateTransformAt(view, originMerc, SpatialReference.WebMercator, new Float64Array(16));
+  const axis = (o) => { const v = [T[o], T[o + 1], T[o + 2]], l = Math.hypot(...v); return v.map((c) => c / l); };
+  const E = axis(0), N = axis(4), U = axis(8), t = [T[12], T[13], T[14]];
+  return {
+    E, N, U, t,
+    matrix: new Float64Array([...E, 0, ...N, 0, ...U, 0, ...t, 1]),
+    // render coordinates → local; `point` subtracts the origin
+    toLocal: (v, point = true) => {
+      const d = point ? [v[0] - t[0], v[1] - t[1], v[2] - t[2]] : v;
+      return [d[0] * E[0] + d[1] * E[1] + d[2] * E[2], d[0] * N[0] + d[1] * N[1] + d[2] * N[2], d[0] * U[0] + d[1] * U[1] + d[2] * U[2]];
     }
-  }
-
-  // Local origin + ENU frame: vertices are stored in metres relative to the origin (float32-safe),
-  // and the big ECEF translation is folded into the model-view matrix in double precision.
-  const SR = SpatialReference.WebMercator;
-  const origin = [(minX + maxX) / 2, (minY + maxY) / 2, zSum / nv];
-  const T = webgl.renderCoordinateTransformAt(view, origin, SR, new Float64Array(16));
-  const ax = (o) => { const v = [T[o], T[o + 1], T[o + 2]]; const l = Math.hypot(...v); return v.map((c) => c / l); };
-  const E = ax(0), Nn = ax(4), U = ax(8), t = [T[12], T[13], T[14]];
-  const R = new Float64Array([E[0], E[1], E[2], 0, Nn[0], Nn[1], Nn[2], 0, U[0], U[1], U[2], 0, t[0], t[1], t[2], 1]);
-  const frame = { frame: R, E, N: Nn, U, t };
-
-  const local = toLocalFrame(merc, nv, frame);
-  // vertex layout: position (3, local metres) · flow-texture uv (2) · dry flag (1)
-  const verts = new Float32Array(nv * 6);
-  for (let i = 0; i < n; i++) {
-    const v = vid[i];
-    if (v < 0) continue;
-    verts.set(local.subarray(v * 3, v * 3 + 3), v * 6);
-    verts[v * 6 + 3] = uv[v * 2];
-    verts[v * 6 + 4] = uv[v * 2 + 1];
-    verts[v * 6 + 5] = dryLow[i];
-  }
-  console.info(`[flood] mesh: ${nv} vertices, ${ind.length / 3} triangles`);
-  return { verts, indices: Uint32Array.from(ind), ...frame };
+  };
 }
 
-function toLocalFrame(merc, count, fr) {
+// Web Mercator xyz (Float64Array) → local float32 positions
+function mercToLocal(merc, count, frame) {
   const rc = new Float64Array(count * 3);
   webgl.toRenderCoordinates(view, merc, 0, SpatialReference.WebMercator, rc, 0, count);
   const out = new Float32Array(count * 3);
-  const { E, N, U, t } = fr;
-  for (let v = 0; v < count; v++) {
-    const dx = rc[v * 3] - t[0], dy = rc[v * 3 + 1] - t[1], dz = rc[v * 3 + 2] - t[2];
-    out[v * 3]     = dx * E[0] + dy * E[1] + dz * E[2];
-    out[v * 3 + 1] = dx * N[0] + dy * N[1] + dz * N[2];
-    out[v * 3 + 2] = dx * U[0] + dy * U[1] + dz * U[2];
-  }
+  for (let v = 0; v < count; v++) out.set(frame.toLocal(rc.subarray(v * 3, v * 3 + 3)), v * 3);
   return out;
 }
 
-// Flood polygon triangles at the local water level, in the same frame as the water mesh
-function buildPolygonMesh(tris, f, fr) {
+// Water surface: one vertex per surface cell (position + flow-texture uv), two triangles per full cell
+function buildWaterMesh(g, f) {
+  const { w, h, surface, Ws } = f;
+  const vid = new Int32Array(w * h).fill(-1);
+  let nv = 0;
+  for (let i = 0; i < w * h; i++) if (surface[i]) vid[i] = nv++;
+
+  const merc = new Float64Array(nv * 3), uv = new Float32Array(nv * 2);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = vid[y * w + x];
+    if (v < 0) continue;
+    merc.set([g.x0 + x * g.res, g.y0 - y * g.res, Ws[y * w + x] + CONFIG.zOffset], v * 3);
+    uv[v * 2] = (x + 0.5) / w; uv[v * 2 + 1] = (y + 0.5) / h;
+  }
+  const indices = [];
+  for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
+    const i = y * w + x, a = vid[i], b = vid[i + 1], c = vid[i + w], d = vid[i + w + 1];
+    const cnt = (a >= 0) + (b >= 0) + (c >= 0) + (d >= 0);
+    if (cnt === 4) indices.push(a, c, b, b, c, d);
+    else if (cnt === 3) indices.push(...[a, b, d, c].filter((q) => q >= 0));
+  }
+
+  const frame = makeLocalFrame([g.x0 + g.w * g.res / 2, g.y0 - g.h * g.res / 2, merc[2]]);
+  const pos = mercToLocal(merc, nv, frame);
+  const verts = new Float32Array(nv * 5);                     // position (3) · uv (2)
+  for (let v = 0; v < nv; v++) { verts.set(pos.subarray(v * 3, v * 3 + 3), v * 5); verts[v * 5 + 3] = uv[v * 2]; verts[v * 5 + 4] = uv[v * 2 + 1]; }
+  return { frame, verts, indices: Uint32Array.from(indices) };
+}
+
+// Flood polygon triangulated (SDK) at the local water level, in the same frame
+function buildBoundaryMesh(polygons, f, frame) {
+  const meshes = polygons.map((p) => Mesh.createFromPolygon(p));
   let nv = 0, ni = 0;
-  for (const m of tris) { nv += m.vertexAttributes.position.length / 3; for (const c of m.components) ni += c.faces.length; }
-  const merc = new Float64Array(nv * 3), idx = new Uint32Array(ni);
+  for (const m of meshes) { nv += m.vertexAttributes.position.length / 3; for (const c of m.components) ni += c.faces.length; }
+  const merc = new Float64Array(nv * 3), indices = new Uint32Array(ni);
+  let fallbackZ = 0, cnt = 0;
+  for (const z of f.Ws) if (z === z) { fallbackZ += z; cnt++; }
+  fallbackZ = cnt ? fallbackZ / cnt : 0;
   let vo = 0, io = 0;
-  const fallbackZ = (() => { let s = 0, c = 0; for (const z of f.Ws) if (z === z) { s += z; c++; } return c ? s / c : 0; })();
-  for (const m of tris) {
+  for (const m of meshes) {
     const p = m.vertexAttributes.position;
     for (let k = 0; k < p.length; k += 3) {
-      const z = f.level(p[k], p[k + 1]);
-      merc[(vo + k / 3) * 3] = p[k];
-      merc[(vo + k / 3) * 3 + 1] = p[k + 1];
-      merc[(vo + k / 3) * 3 + 2] = (z === z ? z : fallbackZ) + CONFIG.zOffset;
+      const z = f.levelAt(p[k], p[k + 1]);
+      merc.set([p[k], p[k + 1], (z === z ? z : fallbackZ) + CONFIG.zOffset], vo * 3 + k);
     }
-    for (const c of m.components) { for (let k = 0; k < c.faces.length; k++) idx[io + k] = c.faces[k] + vo; io += c.faces.length; }
+    for (const c of m.components) for (const face of c.faces) indices[io++] = face + vo;
     vo += p.length / 3;
   }
-  console.info(`[flood] boundary polygon: ${nv} vertices, ${ni / 3} triangles`);
-  return { positions: toLocalFrame(merc, nv, fr), indices: idx };
+  return { positions: mercToLocal(merc, nv, frame), indices };
 }
 
 /* ============================================================================
- * 8) PROCEDURAL DETAIL TEXTURE (tileable)
- *    RG = surface slope (normal), B = foam pattern, A = low-frequency noise
+ * 4) DETAIL TEXTURE (tileable): RG surface slope, B foam pattern, A low-frequency noise
  * ========================================================================== */
 function makeDetailTexture(size = 256) {
   let seed = 7;
@@ -1079,57 +790,50 @@ function makeDetailTexture(size = 256) {
     while (k < kMin || k > kMax);
     return { kx, ky, a: Math.pow(k, -ampPow), p: rnd() * Math.PI * 2 };
   });
-  const wN = waves(56, 2, 22, 1.25), wF = waves(28, 5, 30, 0.9), wA = waves(8, 1, 4, 1.0);
-  const n = size * size;
+  const slopeWaves = waves(56, 2, 22, 1.25), foamWaves = waves(28, 5, 30, 0.9), noiseWaves = waves(8, 1, 4, 1.0);
+  const n = size * size, TAU = Math.PI * 2;
   const gx = new Float32Array(n), gy = new Float32Array(n), fo = new Float32Array(n), lo = new Float32Array(n);
-  const TAU = Math.PI * 2;
-  let gMax = 0, fMin = Infinity, fMax = -Infinity, lMin = Infinity, lMax = -Infinity;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const u = x / size, v = y / size, i = y * size + x;
-    let dx = 0, dy = 0, f = 0, l = 0;
-    for (const q of wN) { const s = Math.sin(TAU * (q.kx * u + q.ky * v) + q.p) * q.a; dx -= s * q.kx; dy -= s * q.ky; }
-    for (const q of wF) f += Math.cos(TAU * (q.kx * u + q.ky * v) + q.p) * q.a;
-    for (const q of wA) l += Math.cos(TAU * (q.kx * u + q.ky * v) + q.p) * q.a;
-    f = 1 - Math.abs(f);                     // ridged → streaky foam
-    gx[i] = dx; gy[i] = dy; fo[i] = f; lo[i] = l;
-    gMax = Math.max(gMax, Math.abs(dx), Math.abs(dy));
-    fMin = Math.min(fMin, f); fMax = Math.max(fMax, f); lMin = Math.min(lMin, l); lMax = Math.max(lMax, l);
+    for (const q of slopeWaves) { const s = Math.sin(TAU * (q.kx * u + q.ky * v) + q.p) * q.a; gx[i] -= s * q.kx; gy[i] -= s * q.ky; }
+    for (const q of foamWaves) fo[i] += Math.cos(TAU * (q.kx * u + q.ky * v) + q.p) * q.a;
+    for (const q of noiseWaves) lo[i] += Math.cos(TAU * (q.kx * u + q.ky * v) + q.p) * q.a;
+    fo[i] = 1 - Math.abs(fo[i]);                                // ridged → streaky foam
   }
+  const range = (a) => { let lo = Infinity, hi = -Infinity; for (const v of a) { lo = Math.min(lo, v); hi = Math.max(hi, v); } return [lo, hi - lo]; };
+  const gMax = Math.max(...range(gx).map(Math.abs), ...range(gy).map(Math.abs));
+  const [fMin, fR] = range(fo), [lMin, lR] = range(lo);
   const px = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) {
     px[i * 4]     = Math.round((gx[i] / gMax * 0.5 + 0.5) * 255);
     px[i * 4 + 1] = Math.round((gy[i] / gMax * 0.5 + 0.5) * 255);
-    px[i * 4 + 2] = Math.round(Math.pow((fo[i] - fMin) / (fMax - fMin), 2.2) * 255);
-    px[i * 4 + 3] = Math.round((lo[i] - lMin) / (lMax - lMin) * 255);
+    px[i * 4 + 2] = Math.round(Math.pow((fo[i] - fMin) / fR, 2.2) * 255);
+    px[i * 4 + 3] = Math.round((lo[i] - lMin) / lR * 255);
   }
   return { size, px };
 }
 
 /* ============================================================================
- * 9) SHADERS
+ * 5) SHADERS
  * ========================================================================== */
-const VS = `#version 300 es
+const WATER_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUV;
-layout(location = 2) in float aDry;
 uniform mat4 uModelView;
 uniform mat4 uProj;
 out vec3 vPos;
 out vec2 vUV;
-out float vDry;
 void main() {
   vPos = aPos;
   vUV = aUV;
-  vDry = aDry;
   gl_Position = uProj * uModelView * vec4(aPos, 1.0);
 }`;
 
-const FS = `#version 300 es
+const WATER_FS = `#version 300 es
 precision highp float;
 in vec3 vPos;
 in vec2 vUV;
-in float vDry;
 uniform sampler2D uFlow;     // RG velocity m/s (east, north), B depth m, A foam
 uniform sampler2D uDetail;   // RG slope, B foam pattern, A noise (tileable)
 uniform sampler2D uMask;     // screen-space flood-polygon mask
@@ -1148,100 +852,76 @@ uniform int   uDebug;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 fragEmissive;
 
-// Two-phase flow-map sampling (Vlachos / Valve technique).
-void flowSample(vec2 p, vec2 vel, float tile, float cycle, float tOff, vec2 jump,
-                out vec2 slope, out float foam) {
+// two-phase flow-map sampling (Vlachos / Valve)
+void flowSample(vec2 p, vec2 vel, float tile, float cycle, float tOff, vec2 jump, out vec2 slope, out float foam) {
   float t  = uTime / cycle + tOff;
-  float p0 = fract(t);
-  float p1 = fract(t + 0.5);
-  float w0 = 1.0 - abs(1.0 - 2.0 * p0);
-  float w1 = 1.0 - w0;
-  vec2 d0 = vel * (p0 - 0.5) * cycle;          // metres travelled within the phase
-  vec2 d1 = vel * (p1 - 0.5) * cycle;
-  vec4 s0 = texture(uDetail, (p - d0) / tile + jump * floor(t));
-  vec4 s1 = texture(uDetail, (p - d1) / tile + jump * floor(t + 0.5) + vec2(0.5));
+  float p0 = fract(t), p1 = fract(t + 0.5);
+  float w0 = 1.0 - abs(1.0 - 2.0 * p0), w1 = 1.0 - w0;
+  vec4 s0 = texture(uDetail, (p - vel * (p0 - 0.5) * cycle) / tile + jump * floor(t));
+  vec4 s1 = texture(uDetail, (p - vel * (p1 - 0.5) * cycle) / tile + jump * floor(t + 0.5) + vec2(0.5));
   slope = (s0.xy * 2.0 - 1.0) * w0 + (s1.xy * 2.0 - 1.0) * w1;
   foam  = s0.z * w0 + s1.z * w1;
 }
 
 vec3 skyColor(vec3 d, vec3 L) {
-  float h = clamp(d.z, 0.0, 1.0);
-  vec3 zenith  = vec3(0.36, 0.55, 0.82);
-  vec3 horizon = vec3(0.78, 0.84, 0.90);
-  vec3 c = mix(horizon, zenith, sqrt(h));
+  vec3 c = mix(vec3(0.78, 0.84, 0.90), vec3(0.36, 0.55, 0.82), sqrt(clamp(d.z, 0.0, 1.0)));
   c += vec3(1.0, 0.9, 0.75) * pow(max(dot(d, L), 0.0), 8.0) * 0.2;
   return c * (0.45 + 0.55 * clamp(L.z * 2.5 + 0.2, 0.0, 1.0));
 }
 
-vec3 ramp(float t) {
+vec3 speedRamp(float t) {
   t = clamp(t, 0.0, 1.0);
   return clamp(vec3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)), 0.0, 1.0);
 }
 
 void main() {
-  if (vDry > 0.5) discard;                                                         // fallback mode only
   if (uUseMask == 1 && texelFetch(uMask, ivec2(gl_FragCoord.xy), 0).r < 0.5) discard;   // outside the flood polygon
+
   vec4 f = texture(uFlow, vUV);
   vec2 vel = f.xy;
-  float speed = length(vel);
-  float depth = f.z;
-
+  float speed = length(vel), depth = f.z;
   vec3 toEye = uEye - vPos;
   float dist = length(toEye);
-  vec3 V = toEye / dist;
-  vec3 L = normalize(uSunDir);
+  vec3 V = toEye / dist, L = normalize(uSunDir);
 
+  // three wave scales: ripples (near), waves, and large swirls that stay visible from far away
   vec2 velA = vel * uSpeedMul;
   float tOff = texture(uDetail, vPos.xy / 211.0).w;
-
-  // three scales: small ripples (near), waves, and large swirls that stay visible from far away
   vec2 sA, sB, sC; float fA, fB, fC;
   flowSample(vPos.xy, velA, 26.0 * uWaveScale, 2.4, tOff,        vec2(0.21, 0.27), sA, fA);
   flowSample(vPos.xy, velA,  7.0 * uWaveScale, 1.5, tOff + 0.37, vec2(0.31, 0.17), sB, fB);
   flowSample(vPos.xy, velA, 95.0 * uWaveScale, 4.0, tOff + 0.71, vec2(0.13, 0.37), sC, fC);
-
   float rough = mix(0.35, 1.0, smoothstep(0.1, 2.5, speed));
-  float distFade = 1.0 / (1.0 + dist / 1800.0);
-  vec2 s = (sA * 0.55 + sB * 0.40 * distFade) * rough * mix(0.35, 1.0, distFade)
-         + sC * 0.30 * rough * (1.0 - 0.5 * distFade);
+  float near = 1.0 / (1.0 + dist / 1800.0);
+  vec2 s = (sA * 0.55 + sB * 0.40 * near) * rough * mix(0.35, 1.0, near) + sC * 0.30 * rough * (1.0 - 0.5 * near);
   vec3 N = normalize(vec3(-s, 1.0));
 
-  // --- lighting ---------------------------------------------------------------
-  float NdotV = max(dot(N, V), 0.0);
-  float F = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
-  vec3 R = reflect(-V, N);
-  R.z = max(R.z, 0.02);
-  R = normalize(R);
-  vec3 sky = skyColor(R, L);
+  // lighting: Fresnel sky reflection, sun glint, silty body
+  float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+  vec3 R = reflect(-V, N); R.z = max(R.z, 0.02); R = normalize(R);
   float RdotL = max(dot(R, L), 0.0);
   float spec = (pow(RdotL, 420.0) * 4.0 + pow(RdotL, 48.0) * 0.12) * step(0.0, L.z);
-  vec3 body = mix(uShallow, uDeep, smoothstep(0.0, 4.0, depth)) * uLight * uSunTint;
-  body *= 0.93 + 0.5 * dot(N.xy, L.xy);                // wave faces turned to the sun catch more light
-  vec3 col = mix(body, sky, F) + uSunTint * spec;
+  vec3 body = mix(uShallow, uDeep, smoothstep(0.0, 4.0, depth)) * uLight * uSunTint * (0.93 + 0.5 * dot(N.xy, L.xy));
+  vec3 col = mix(body, skyColor(R, L), F) + uSunTint * spec;
 
-  // --- foam: weirs, fast or rapidly changing flow, shoreline ------------------------
-  float shore = 1.0 - smoothstep(0.05, 0.6, depth);
-  float foamMask = clamp(f.w + shore * 0.5, 0.0, 1.0);
-  float pat = mix(0.6 * fA + 0.4 * fB, 0.5 * fA + 0.5 * fC, 1.0 - distFade);
+  // foam: weirs, fast or rapidly changing flow, shoreline
+  float foamMask = clamp(f.w + (1.0 - smoothstep(0.05, 0.6, depth)) * 0.5, 0.0, 1.0);
+  float pat = mix(0.6 * fA + 0.4 * fB, 0.5 * fA + 0.5 * fC, 1.0 - near);
   float foam = smoothstep(1.0 - foamMask, 1.0 - foamMask + 0.22, pat) * foamMask;
   col = mix(col, vec3(0.95, 0.93, 0.88) * uLight * uSunTint, foam * 0.85);
 
-  // --- aerial perspective --------------------------------------------------------
-  float haze = 1.0 - exp(-dist / 16000.0);
-  col = mix(col, skyColor(vec3(0.0, 0.0, 0.05), L), haze * 0.55);
+  // aerial perspective
+  col = mix(col, skyColor(vec3(0.0, 0.0, 0.05), L), (1.0 - exp(-dist / 16000.0)) * 0.55);
 
   float alpha = mix(uOpacity * 0.6, uOpacity, smoothstep(0.0, 1.2, depth));
-  alpha = clamp(max(alpha, foam) + F * 0.25, 0.0, 1.0);
+  alpha = clamp(max(alpha, foam * min(1.0, uOpacity * 1.5)) + F * 0.25 * uOpacity, 0.0, 1.0);
 
-  if (uDebug == 1) {
-    col = ramp(speed / 4.0) * (0.55 + 0.7 * mix(fA, fC, 1.0 - distFade));
-    alpha = 0.92;
-  }
+  if (uDebug == 1) { col = speedRamp(speed / 4.0) * (0.55 + 0.7 * mix(fA, fC, 1.0 - near)); alpha = 0.92; }
   fragColor = vec4(col, alpha);
   fragEmissive = vec4(0.0, 0.0, 0.0, alpha);
 }`;
 
-// mask pass: flood polygon drawn into an offscreen, screen-sized target
+// mask pass: the flood polygon drawn into an offscreen, screen-sized target
 const MASK_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec3 aPos;
@@ -1255,124 +935,93 @@ out vec4 o;
 void main() { o = vec4(1.0); }`;
 
 /* ============================================================================
- * 10) RENDER NODE
+ * 6) RENDER NODE
  * ========================================================================== */
-const state = {
-  data: null,      // { mesh, flow, poly }
+const water = {
+  visible: true, look: "flood", speed: 3, waveSize: 1, opacity: WATER_LOOKS.flood.opacity, debug: false,
+  opacityFactor: 1,          // lowered while flow lines are shown
+  data: null,                // { surface, boundary, flow }
   gpu: null,
-  params: { enabled: true, speedMul: 3, waveScale: 1, opacity: STYLES.flood.opacity, style: "flood", debug: false },
   t0: performance.now()
 };
 
-function compile(gl, type, src) {
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error("Shader compile error: " + gl.getShaderInfoLog(sh));
-  return sh;
-}
-function link(gl, vs, fs) {
+function linkProgram(gl, vsSrc, fsSrc) {
   const prog = gl.createProgram();
-  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, vs));
-  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, fs));
+  for (const [type, src] of [[gl.VERTEX_SHADER, vsSrc], [gl.FRAGMENT_SHADER, fsSrc]]) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error("Shader compile error: " + gl.getShaderInfoLog(sh));
+    gl.attachShader(prog, sh);
+  }
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("Program link error: " + gl.getProgramInfoLog(prog));
-  return prog;
+  const uniforms = {};
+  for (let k = 0, n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS); k < n; k++) {
+    const name = gl.getActiveUniform(prog, k).name;
+    uniforms[name] = gl.getUniformLocation(prog, name);
+  }
+  return { prog, uniforms };
+}
+
+// vertex array from interleaved float attributes [[location, size], ...]
+function makeVAO(gl, data, layout, indices) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  const stride = layout.reduce((s, [, size]) => s + size, 0) * 4;
+  let offset = 0;
+  for (const [loc, size] of layout) {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset);
+    offset += size * 4;
+  }
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, count: indices.length };
+}
+
+function makeTexture(gl, internal, w, h, format, type, data, { filter = gl.LINEAR, wrap = gl.CLAMP_TO_EDGE, mipmap = false } = {}) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, data);
+  if (mipmap) gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmap ? gl.LINEAR_MIPMAP_LINEAR : filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+  return tex;
 }
 
 function initGPU(gl) {
-  const prog = link(gl, VS, FS);
-  const u = {};
-  for (const name of ["uModelView", "uProj", "uFlow", "uDetail", "uMask", "uUseMask", "uTime", "uEye", "uSunDir", "uSunTint",
-                      "uLight", "uShallow", "uDeep", "uSpeedMul", "uWaveScale", "uOpacity", "uDebug"]) {
-    u[name] = gl.getUniformLocation(prog, name);
-  }
-
-  const { mesh, flow, poly } = state.data;
-  const vao = gl.createVertexArray();
-  gl.bindVertexArray(vao);
-  const vbo = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.bufferData(gl.ARRAY_BUFFER, mesh.verts, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 12);
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 24, 20);
-  const ibo = gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
-  gl.bindVertexArray(null);
-
-  // flood polygon (mask pass)
-  let mask = null;
-  if (poly) {
-    const mprog = link(gl, MASK_VS, MASK_FS);
-    const mvao = gl.createVertexArray();
-    gl.bindVertexArray(mvao);
-    const pvbo = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, pvbo);
-    gl.bufferData(gl.ARRAY_BUFFER, poly.positions, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
-    const pibo = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, pibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, poly.indices, gl.STATIC_DRAW);
-    gl.bindVertexArray(null);
-    mask = {
-      prog: mprog, vao: mvao, count: poly.indices.length,
-      uMV: gl.getUniformLocation(mprog, "uModelView"), uProj: gl.getUniformLocation(mprog, "uProj"),
-      fbo: gl.createFramebuffer(), tex: gl.createTexture(), w: 0, h: 0
-    };
-  }
-  gl.bindBuffer(gl.ARRAY_BUFFER, null);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-
+  const { surface, boundary, flow } = water.data;
   gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-  gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
-  gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
-
-  const flowTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, flowTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, flow.w, flow.h, 0, gl.RGBA, gl.FLOAT, flow.tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
   const det = makeDetailTexture(256);
-  const detailTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, detailTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, det.size, det.size, 0, gl.RGBA, gl.UNSIGNED_BYTE, det.px);
-  gl.generateMipmap(gl.TEXTURE_2D);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  const gpu = {
+    water: linkProgram(gl, WATER_VS, WATER_FS),
+    surface: makeVAO(gl, surface.verts, [[0, 3], [1, 2]], surface.indices),
+    flowTex: makeTexture(gl, gl.RGBA16F, flow.w, flow.h, gl.RGBA, gl.FLOAT, flow.tex),
+    detailTex: makeTexture(gl, gl.RGBA8, det.size, det.size, gl.RGBA, gl.UNSIGNED_BYTE, det.px, { wrap: gl.REPEAT, mipmap: true }),
+    mask: null
+  };
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
-  if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+  if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);   // detail texture is bound
+  if (boundary) {
+    gpu.mask = {
+      ...linkProgram(gl, MASK_VS, MASK_FS),
+      mesh: makeVAO(gl, boundary.positions, [[0, 3]], boundary.indices),
+      fbo: gl.createFramebuffer(), tex: null, w: 0, h: 0
+    };
+  }
   gl.bindTexture(gl.TEXTURE_2D, null);
-
-  return { prog, u, vao, count: mesh.indices.length, flowTex, detailTex, mask };
-}
-
-// (re)allocate the screen-sized mask target
-function ensureMaskTarget(gl, mask, width, height) {
-  if (mask.w === width && mask.h === height) return;
-  gl.bindTexture(gl.TEXTURE_2D, mask.tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, mask.fbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, mask.tex, 0);
-  mask.w = width; mask.h = height;
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  return gpu;
 }
 
 // column-major 4×4 multiply (double precision)
@@ -1391,295 +1040,310 @@ const WaterRenderNode = RenderNode.createSubclass({
   render() {
     const gl = this.gl;
     let output = this.bindRenderTarget();
-    if (!state.data || !state.params.enabled) return output;
-
+    if (!water.data || !water.visible) return output;
     try {
-      if (!state.gpu) state.gpu = initGPU(gl);
+      water.gpu ??= initGPU(gl);
     } catch (e) {
       console.error(e);
       setStatus(String(e.message || e), null, true);
-      state.params.enabled = false;
+      water.data = null;
       return output;
     }
-    const { prog, u, vao, count, flowTex, detailTex, mask } = state.gpu;
-    const { mesh } = state.data;
-    const cam = this.camera;
-    const P = cam.projectionMatrix;
-
-    // Depth convention (standard vs reversed) detected from the projection matrix
-    const ndc = (d) => (P[10] * -d + P[14]) / (P[11] * -d + P[15]);
-    const zN = ndc(cam.near || 1), zF = ndc(cam.far || 1e5);
-    const depthFunc = Number.isFinite(zN) && Number.isFinite(zF) && zN > zF ? gl.GEQUAL : gl.LEQUAL;
-
-    const modelView = new Float32Array(mul4(cam.viewMatrix, mesh.frame));
+    const { gpu } = water, { frame } = water.data.surface;
+    const cam = this.camera, P = cam.projectionMatrix;
+    const modelView = new Float32Array(mul4(cam.viewMatrix, frame.matrix));
     const proj = new Float32Array(P);
     const vp = gl.getParameter(gl.VIEWPORT);
 
-    // --- pass 1: flood polygon → mask ------------------------------------------------------
+    // pass 1: flood polygon → screen-space mask
+    const mask = gpu.mask;
     if (mask) {
-      ensureMaskTarget(gl, mask, vp[0] + vp[2], vp[1] + vp[3]);
+      const mw = vp[0] + vp[2], mh = vp[1] + vp[3];
+      if (mask.w !== mw || mask.h !== mh) {
+        if (mask.tex) gl.deleteTexture(mask.tex);
+        mask.tex = makeTexture(gl, gl.RGBA8, mw, mh, gl.RGBA, gl.UNSIGNED_BYTE, null, { filter: gl.NEAREST });
+        gl.bindFramebuffer(gl.FRAMEBUFFER, mask.fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, mask.tex, 0);
+        mask.w = mw; mask.h = mh;
+      }
       gl.bindFramebuffer(gl.FRAMEBUFFER, mask.fbo);
       gl.viewport(vp[0], vp[1], vp[2], vp[3]);
-      gl.disable(gl.DEPTH_TEST);
-      gl.disable(gl.BLEND);
-      gl.disable(gl.CULL_FACE);
-      gl.disable(gl.SCISSOR_TEST);
+      gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.disable(gl.SCISSOR_TEST);
       gl.colorMask(true, true, true, true);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(mask.prog);
-      gl.uniformMatrix4fv(mask.uMV, false, modelView);
-      gl.uniformMatrix4fv(mask.uProj, false, proj);
-      gl.bindVertexArray(mask.vao);
-      gl.drawElements(gl.TRIANGLES, mask.count, gl.UNSIGNED_INT, 0);
-      gl.bindVertexArray(null);
+      gl.uniformMatrix4fv(mask.uniforms.uModelView, false, modelView);
+      gl.uniformMatrix4fv(mask.uniforms.uProj, false, proj);
+      gl.bindVertexArray(mask.mesh.vao);
+      gl.drawElements(gl.TRIANGLES, mask.mesh.count, gl.UNSIGNED_INT, 0);
       output = this.bindRenderTarget();
       gl.viewport(vp[0], vp[1], vp[2], vp[3]);
     }
 
-    // --- pass 2: water ------------------------------------------------------------------------
-    const toLocal = (v, isPoint) => {
-      const d = isPoint ? [v[0] - mesh.t[0], v[1] - mesh.t[1], v[2] - mesh.t[2]] : [v[0], v[1], v[2]];
-      return [d[0] * mesh.E[0] + d[1] * mesh.E[1] + d[2] * mesh.E[2],
-              d[0] * mesh.N[0] + d[1] * mesh.N[1] + d[2] * mesh.N[2],
-              d[0] * mesh.U[0] + d[1] * mesh.U[1] + d[2] * mesh.U[2]];
-    };
-    const eye = toLocal(cam.eye, true);
+    // pass 2: water
+    const eye = frame.toLocal(cam.eye);
+    const sun = this.sunLight;
+    let L = sun?.direction ? frame.toLocal(sun.direction, false) : [0.35, 0.45, 0.82];
+    if (L[2] < -0.05) L = L.map((c) => -c);                  // "incident" vs "towards the sun" convention
+    const sunColor = Array.from(sun?.diffuse?.color ?? [1, 1, 1]), cMax = Math.max(...sunColor, 1e-3);
+    const look = WATER_LOOKS[water.look];
+    // depth convention (standard or reversed) from the projection matrix
+    const ndc = (d) => (P[10] * -d + P[14]) / (P[11] * -d + P[15]);
+    const reversed = ndc(cam.near || 1) > ndc(cam.far || 1e5);
 
-    // Sun: direction towards the sun in the local frame; its colour only tints the water.
-    const sl = this.sunLight;
-    let L = sl && sl.direction ? toLocal(sl.direction, false) : [0.35, 0.45, 0.82];
-    if (L[2] < -0.05) L = L.map((c) => -c);   // handle "incident" vs "towards sun" convention
-    const dC = Array.from(sl?.diffuse?.color ?? [1, 1, 1]);
-    const cMax = Math.max(...dC, 1e-3);
-    const tint = dC.map((c) => 0.75 + 0.25 * c / cMax);
-    const light = 0.55 + 0.5 * Math.max(0, Math.min(1, L[2] / 0.6));
-    const style = STYLES[state.params.style];
-
+    const { prog, uniforms: u } = gpu.water;
     gl.useProgram(prog);
     gl.uniformMatrix4fv(u.uModelView, false, modelView);
     gl.uniformMatrix4fv(u.uProj, false, proj);
-    gl.uniform1f(u.uTime, ((performance.now() - state.t0) / 1000) % 3600);
+    gl.uniform1f(u.uTime, ((performance.now() - water.t0) / 1000) % 3600);
     gl.uniform3fv(u.uEye, eye);
     gl.uniform3fv(u.uSunDir, L);
-    gl.uniform3fv(u.uSunTint, tint);
-    gl.uniform1f(u.uLight, light);
-    gl.uniform3fv(u.uShallow, style.shallow);
-    gl.uniform3fv(u.uDeep, style.deep);
-    gl.uniform1f(u.uSpeedMul, state.params.speedMul);
-    gl.uniform1f(u.uWaveScale, state.params.waveScale);
-    gl.uniform1f(u.uOpacity, state.params.opacity);
-    gl.uniform1i(u.uDebug, state.params.debug ? 1 : 0);
+    gl.uniform3fv(u.uSunTint, sunColor.map((c) => 0.75 + 0.25 * c / cMax));
+    gl.uniform1f(u.uLight, 0.55 + 0.5 * Math.max(0, Math.min(1, L[2] / 0.6)));
+    gl.uniform3fv(u.uShallow, look.shallow);
+    gl.uniform3fv(u.uDeep, look.deep);
+    gl.uniform1f(u.uSpeedMul, water.speed);
+    gl.uniform1f(u.uWaveScale, water.waveSize);
+    gl.uniform1f(u.uOpacity, water.opacity * water.opacityFactor);
+    gl.uniform1i(u.uDebug, water.debug ? 1 : 0);
     gl.uniform1i(u.uUseMask, mask ? 1 : 0);
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, flowTex);
-    gl.uniform1i(u.uFlow, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, detailTex);
-    gl.uniform1i(u.uDetail, 1);
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, mask ? mask.tex : null);
-    gl.uniform1i(u.uMask, 2);
+    [[gpu.flowTex, "uFlow"], [gpu.detailTex, "uDetail"], [mask?.tex ?? null, "uMask"]].forEach(([tex, name], unit) => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.uniform1i(u[name], unit);
+    });
 
     gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(depthFunc);
+    gl.depthFunc(reversed ? gl.GEQUAL : gl.LEQUAL);
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-
-    gl.bindVertexArray(vao);
-    gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, 0);
+    gl.bindVertexArray(gpu.surface.vao);
+    gl.drawElements(gl.TRIANGLES, gpu.surface.count, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
 
     this.resetWebGLState();
-    this.requestRender();          // continuous animation
+    this.requestRender();                                     // continuous animation
     return output;
   }
 });
+let waterNode = null;
+const redraw = () => waterNode?.requestRender();
 
 /* ============================================================================
- * 11) UI
+ * 7) FLOW LINES (Esri FlowRenderer on MagDir, draped on the flood surface)
  * ========================================================================== */
-function bindUI() {
-  const $ = (id) => document.getElementById(id);
-  const kick = () => window.floodDebug.node?.requestRender();
-  const fillTrack = (el) => el.style.setProperty("--pct", `${(100 * (el.value - el.min) / (el.max - el.min)).toFixed(1)}%`);
+const lines = { visible: false, ...CONFIG.flowLines };
+const lineLayers = [];             // created on first use; above density 1, extra copies (each seeds its own lines)
+let floodGround = null;            // DTM with the flood surface inside the polygon (set once the polygon is loaded)
+let lineRendererKey = "";
 
-  $("enabled").addEventListener("change", (e) => { state.params.enabled = e.target.checked; kick(); });
-  for (const r of document.querySelectorAll('input[name="look"]')) {
-    r.addEventListener("change", (e) => {
-      state.params.style = e.target.value;
-      state.params.opacity = STYLES[e.target.value].opacity;
-      $("opacity").value = state.params.opacity;
-      $("opacityVal").textContent = `${Math.round(state.params.opacity * 100)} %`;
-      fillTrack($("opacity"));
-      kick();
-    });
+function makeLineRenderer(density) {
+  const byFlow = lines.color === "flow";
+  const rgb = LINE_COLORS[byFlow ? "white" : lines.color];
+  return new FlowRenderer({
+    flowRepresentation: lines.representation,
+    color: [...rgb, lines.bold ? 1 : 0.9],
+    density,
+    trailLength: lines.trailLength,
+    trailWidth: lines.trailWidth,
+    flowSpeed: lines.flowSpeed,
+    visualVariables: byFlow ? [{ type: "color", field: "Magnitude", stops: LINE_RAMP }] : null
+  });
+}
+
+function updateFlowLines() {
+  const copies = lines.density > 1 ? Math.min(3, Math.ceil(lines.density)) : 1;
+  if (lines.visible) {
+    while (lineLayers.length < copies) {
+      const layer = new ImageryTileLayer({ url: CONFIG.urls.flowRaster, title: "Flow lines", visible: false });
+      lineLayers.push(layer);
+      map.add(layer);
+    }
+    const key = JSON.stringify({ ...lines, visible: true, copies });
+    if (key !== lineRendererKey) {
+      lineRendererKey = key;
+      lineLayers.slice(0, copies).forEach((l) => (l.renderer = makeLineRenderer(lines.density / copies)));
+    }
   }
-  const slider = (id, key, label) => {
-    const el = $(id);
-    fillTrack(el);
-    el.addEventListener("input", () => { state.params[key] = +el.value; $(id + "Val").textContent = label(+el.value); fillTrack(el); });
-  };
-  slider("speed", "speedMul", (v) => `${v.toFixed(1)}×`);
-  slider("waves", "waveScale", (v) => `${v.toFixed(1)}×`);
-  slider("opacity", "opacity", (v) => `${Math.round(v * 100)} %`);
-  $("debug").addEventListener("change", (e) => { state.params.debug = e.target.checked; $("legend").hidden = !e.target.checked; });
+  lineLayers.forEach((l, i) => (l.visible = lines.visible && i < copies));
 
+  // drape on the flood surface while the lines are shown; the plain DTM otherwise
+  const ground = lines.visible && floodGround ? floodGround : dtmLayer;
+  if (map.ground.layers.getItemAt(0) !== ground) map.ground.layers = [ground];
+
+  // let the lines read through the water
+  water.opacityFactor = lines.visible ? CONFIG.waterUnderLines[lines.bold ? "bold" : "normal"] : 1;
+  redraw();
+}
+
+// Ground for the flow lines: the DTM, replaced inside the flood polygon by the flood surface (teren_hladina5160)
+// lowered by groundOffset so the water shader stays on top. Raster layers in a SceneView are always draped on the
+// ground, so this puts the lines on the water surface instead of the river bed.
+const FloodSurfaceGround = BaseElevationLayer.createSubclass({
+  load() {
+    // this.boundaryPath (Path2D, metres around this.pathOrigin) is set right after construction
+    this.addResolvingPromise(Promise.all([dtmLayer.load(), levelLayer.load()]).then(() => {
+      const ti = dtmLayer.tileInfo.clone();
+      const maxScale = dtmLayer.sourceJSON?.maxScale;         // the DTM cache stops here
+      if (maxScale) ti.lods = ti.lods.filter((l) => l.scale >= maxScale * 0.99);
+      this.tileInfo = ti;
+      this.spatialReference = dtmLayer.spatialReference;
+      this.fullExtent = dtmLayer.fullExtent;
+    }));
+  },
+  async fetchTile(level, row, col, options) {
+    const [dtm, lvl] = await Promise.all([
+      dtmLayer.fetchTile(level, row, col, options),
+      levelLayer.fetchTile(level, row, col, options).catch(() => null)
+    ]);
+    if (!lvl) return dtm;
+    const res = this.tileInfo.lods.find((l) => l.level === level).resolution;
+    const ts = this.tileInfo.size[0], o = this.tileInfo.origin;
+    const x0 = o.x + col * ts * res - this.pathOrigin[0], y0 = o.y - row * ts * res - this.pathOrigin[1];
+    const ctx = new OffscreenCanvas(dtm.width, dtm.height).getContext("2d", { willReadFrequently: true });
+    ctx.setTransform(1 / res, 0, 0, -1 / res, -x0 / res + 0.5, y0 / res + 0.5);
+    ctx.fillStyle = "#fff";
+    ctx.fill(this.boundaryPath, "evenodd");
+    const inside = ctx.getImageData(0, 0, dtm.width, dtm.height).data;
+    const v = dtm.values, lv = lvl.values, nd = lvl.noDataValue, off = lines.groundOffset;
+    for (let i = 0; i < v.length; i++) {
+      if (inside[i * 4] > 127 && lv[i] !== nd && Math.abs(lv[i]) < 9000) v[i] = lv[i] - off;
+    }
+    return dtm;
+  }
+});
+
+function createFloodGround(boundary) {
+  const e = boundary.extent;
+  const origin = [(e.xmin + e.xmax) / 2, (e.ymin + e.ymax) / 2];   // small canvas coordinates (float precision)
+  floodGround = new FloodSurfaceGround();
+  floodGround.boundaryPath = polygonPath(boundary.polygons, origin);
+  floodGround.pathOrigin = origin;
+  if (lines.visible) updateFlowLines();
+}
+
+/* ============================================================================
+ * 8) PANEL
+ * ========================================================================== */
+function bindPanel() {
+  const trackFill = (el) => el.style.setProperty("--pct", `${(100 * (el.value - el.min) / (el.max - el.min)).toFixed(1)}%`);
+  const slider = (id, target, key, label, onChange) => {
+    const el = $(id), out = $(id + "Val");
+    const show = () => { out.textContent = label(+el.value); trackFill(el); };
+    el.value = target[key];
+    show();
+    el.addEventListener("input", () => { target[key] = +el.value; show(); onChange?.(); });
+    return { set: (v) => { target[key] = v; el.value = v; show(); } };
+  };
+  const pct = (v) => `${Math.round(v * 100)} %`, times = (v) => `${v.toFixed(1)}×`;
+
+  // water
+  $("waterVisible").addEventListener("change", (e) => { water.visible = e.target.checked; redraw(); });
+  slider("waterSpeed", water, "speed", times);
+  slider("waveSize", water, "waveSize", times);
+  const opacity = slider("waterOpacity", water, "opacity", pct);
+  document.querySelectorAll('input[name="look"]').forEach((r) => r.addEventListener("change", (e) => {
+    water.look = e.target.value;
+    opacity.set(WATER_LOOKS[water.look].opacity);
+    redraw();
+  }));
+  $("speedColours").addEventListener("change", (e) => { water.debug = e.target.checked; $("speedLegend").hidden = !water.debug; });
+
+  // flow lines (renderer changes are debounced: each one restarts the animation)
+  let timer = 0;
+  const restyle = () => { clearTimeout(timer); timer = setTimeout(updateFlowLines, 150); };
+  slider("lineDensity", lines, "density", pct, restyle);
+  slider("lineLength", lines, "trailLength", (v) => `${v} px`, restyle);
+  slider("lineWidth", lines, "trailWidth", (v) => `${+v.toFixed(2)} px`, restyle);
+  slider("lineSpeed", lines, "flowSpeed", (v) => `${v}`, restyle);
+  document.querySelectorAll('input[name="lineColor"]').forEach((r) => {
+    r.checked = r.value === lines.color;
+    r.addEventListener("change", (e) => { lines.color = e.target.value; $("lineLegend").hidden = lines.color !== "flow"; restyle(); });
+  });
+  $("linesBold").checked = lines.bold;
+  $("linesBold").addEventListener("change", (e) => { lines.bold = e.target.checked; updateFlowLines(); });
+  $("linesVisible").addEventListener("change", (e) => {
+    lines.visible = e.target.checked;
+    if (lines.visible) setSectionOpen($("linesSection"), true);
+    updateFlowLines();
+  });
+
+  // collapsing
+  document.querySelectorAll(".section").forEach((sec) =>
+    sec.querySelector(".sec-toggle").addEventListener("click", () => setSectionOpen(sec, sec.classList.contains("collapsed"))));
   $("collapse").addEventListener("click", () => {
-    const collapsed = panelEl.classList.toggle("collapsed");
+    const collapsed = panel.classList.toggle("collapsed");
     $("collapse").setAttribute("aria-expanded", String(!collapsed));
     $("collapse").title = collapsed ? "Show controls" : "Hide controls";
   });
-
-  // collapsible sections
-  for (const sec of document.querySelectorAll(".section")) {
-    sec.querySelector(".sec-toggle").addEventListener("click", () => setSectionOpen(sec, sec.classList.contains("collapsed")));
-  }
-
-  // flow lines
-  const fl = flowLineParams;
-  let timer = 0;
-  const applyRenderer = () => {          // debounced: a new renderer restarts the flow animation
-    clearTimeout(timer);
-    timer = setTimeout(() => { if (flowLinesLayer) flowLinesLayer.renderer = makeFlowRenderer(fl); }, 150);
-  };
-  const flowSlider = (id, key, label) => {
-    const el = $(id);
-    fillTrack(el);
-    el.addEventListener("input", () => { fl[key] = +el.value; $(id + "Val").textContent = label(+el.value); fillTrack(el); applyRenderer(); });
-  };
-  flowSlider("flowDensity", "density", (v) => `${Math.round(v * 100)} %`);
-  flowSlider("flowTrail", "trailLength", (v) => `${v} px`);
-  flowSlider("flowWidth", "trailWidth", (v) => `${+v.toFixed(2)} px`);
-  flowSlider("flowSpeed", "flowSpeed", (v) => `${v}`);
-  for (const r of document.querySelectorAll('input[name="flowColor"]')) {
-    r.addEventListener("change", (e) => { fl.color = e.target.value; $("flowLegend").hidden = fl.color !== "flow"; applyRenderer(); });
-  }
-  if (!flowLinesLayer) $("flowEnabled").disabled = true;
-  $("flowEnabled").addEventListener("change", (e) => setFlowLines(e.target.checked));
 }
-
-const flowLineParams = { ...CONFIG.flowLines };
-let flowLinesOn = false, savedWaterOpacity = null;
 
 function setSectionOpen(sec, open) {
   sec.classList.toggle("collapsed", !open);
   sec.querySelector(".sec-toggle").setAttribute("aria-expanded", String(open));
 }
 
-function setWaterOpacity(v) {
-  const el = document.getElementById("opacity");
-  state.params.opacity = v;
-  el.value = v;
-  document.getElementById("opacityVal").textContent = `${Math.round(v * 100)} %`;
-  el.style.setProperty("--pct", `${(100 * (v - el.min) / (el.max - el.min)).toFixed(1)}%`);
-}
-
-// Flow lines on: show the layer, drape it on the flood surface, and let it read through the water.
-function setFlowLines(on) {
-  if (!flowLinesLayer) return;
-  flowLinesOn = on;
-  flowLinesLayer.visible = on;
-  map.ground.layers = on && floodGround ? [floodGround] : [dtmLayer];
-  const target = flowLineParams.waterOpacity;
-  if (on) {
-    setSectionOpen(document.getElementById("secFlow"), true);
-    if (state.params.opacity > target) { savedWaterOpacity = state.params.opacity; setWaterOpacity(target); }
-  } else if (savedWaterOpacity !== null) {
-    if (Math.abs(state.params.opacity - target) < 1e-3) setWaterOpacity(savedWaterOpacity);   // unless the user moved it
-    savedWaterOpacity = null;
-  }
-}
-
-// Build the flood-surface ground once the flood polygon is known
-function setupFloodGround(ext) {
-  const e = ext.polys[0].extent;
-  const origin = [(e.xmin + e.xmax) / 2, (e.ymin + e.ymax) / 2];   // keeps canvas coordinates small (float precision)
-  const path = new Path2D();
-  for (const p of ext.polys) {
-    for (const ring of p.rings) {
-      ring.forEach(([X, Y], k) => (k ? path.lineTo(X - origin[0], Y - origin[1]) : path.moveTo(X - origin[0], Y - origin[1])));
-      path.closePath();
-    }
-  }
-  floodGround = new FloodSurfaceGround();
-  floodGround.floodPath = path;
-  floodGround.pathOrigin = origin;
-  if (flowLinesOn) map.ground.layers = [floodGround];
-}
-
-bindUI();
-
 function showScenario(attrs) {
-  if (!attrs) return;
-  const q = attrs.Q_Chuchle, qv = attrs.Q_Vltava, qb = attrs.Q_Berounka;
-  if (q) document.getElementById("qValue").textContent = fmt(q).replace(/ /g, " ");
-  if (qv && qb) document.getElementById("qSplit").innerHTML = `Vltava <b>${fmt(qv)}</b> and Berounka <b>${fmt(qb)}</b>`;
+  const { Q_Chuchle: q, Q_Vltava: qv, Q_Berounka: qb } = attrs ?? {};
+  if (q) $("qValue").textContent = fmt(q).replace(/ /g, " ");
+  if (qv && qb) $("qSplit").innerHTML = `Vltava <b>${fmt(qv)}</b> and Berounka <b>${fmt(qb)}</b>`;
 }
+
+function showStats(stats, boundary) {
+  const area = boundary?.attributes?.Shape_Area ? boundary.attributes.Shape_Area / 1e6 : stats.areaKm2;
+  $("statArea").innerHTML = `${fmt(area, 1)}<small>km²</small>`;
+  $("statMean").innerHTML = `${fmt(stats.vMean, 1)}<small>m/s</small>`;
+  $("statMax").innerHTML = `${fmt(stats.vMax, 1)}<small>m/s</small>`;
+  $("stats").hidden = false;
+}
+
+bindPanel();
+window.flood = { view, water, lines };                       // handle for debugging in the console
 
 /* ============================================================================
  * RUN
  * ========================================================================== */
 try {
-  setStatus("Loading terrain and water level", 0.02);
-  const grid = await loadGrid(CONFIG.dataLevel);
-  setStatus("Finding the water body", 0.58);
-  await nextFrame();
-  const lw = levelWaterMask(grid);
+  // flood boundary and flow raster first: they define the area to load
+  setStatus("Loading the flood boundary and flow field", 0.05);
+  const [boundaryRes, rasterRes] = await Promise.allSettled([loadFloodBoundary(), flowRaster.load()]);
+  const boundary = boundaryRes.status === "fulfilled" ? boundaryRes.value : null;
+  const rasterOk = rasterRes.status === "fulfilled";
+  if (!boundary) console.warn("[flood] flood boundary unavailable", boundaryRes.reason);
+  if (!rasterOk) console.warn("[flood] flow raster unavailable", rasterRes.reason);
+  if (!boundary && !rasterOk) throw new Error("Neither the flood boundary nor the flow raster could be loaded.");
+  if (boundary) { showScenario(boundary.attributes); createFloodGround(boundary); }
+  if (!rasterOk) $("linesVisible").disabled = true;
 
-  // flood boundary polygon
-  let extent = null;
-  if (extentLayer) {
-    try {
-      setStatus("Loading the flood boundary", 0.62);
-      extent = await loadFloodExtent();
-      showScenario(extent.attributes);
-      setupFloodGround(extent);
-    } catch (e) {
-      console.warn("[flood] flood boundary unavailable – using the raster mask", e);
-      extent = null;
-    }
+  let area;
+  if (boundary) area = boundary.extent;
+  else {
+    const e = flowRaster.fullExtent, [xmin, ymin] = lonLatToMerc(e.xmin, e.ymin), [xmax, ymax] = lonLatToMerc(e.xmax, e.ymax);
+    area = e.spatialReference.isWGS84 ? { xmin, ymin, xmax, ymax } : e;
   }
-
-  // vector field
-  let domain = null, vec = null, note = "";
-  if (flowLayer) {
-    try {
-      await flowLayer.load();
-      domain = cropDomain(grid, lw, extentToMerc(flowLayer.fullExtent));
-      setStatus("Loading the flow field", 0.7);
-      vec = await loadVectorField(domain);
-    } catch (e) {
-      console.warn("[flood] vector raster unavailable – deriving the flow from the water level", e);
-      note = "The flow raster could not be loaded, so the flow is estimated from the water level.";
-      vec = null;
-    }
-  }
-  if (!domain || !vec) domain = extent ? cropDomain(grid, lw, extent.polys[0].extent) : cropDomain(grid, lw, null);
+  const pad = 500;                                            // m – room for the surface ring around the flood
+  const grid = await loadSurfaceGrid({ xmin: area.xmin - pad, ymin: area.ymin - pad, xmax: area.xmax + pad, ymax: area.ymax + pad });
+  setStatus("Loading the flow field", 0.68);
+  const vec = rasterOk ? await loadVectorField(grid).catch((e) => { console.warn("[flood] flow raster pixels unavailable", e); return null; }) : null;
 
   setStatus("Building the water surface", 0.85);
   await nextFrame();
-  const inside = extent ? rasterizePolygons(extent.polys, domain) : null;
-  const flow = computeFlowField(domain, vec, inside);
-  const mesh = buildMesh(flow);
-  const poly = extent ? buildPolygonMesh(extent.tris, flow, mesh) : null;
-  state.data = { mesh, flow, poly };
-  window.floodDebug.state = state;
-  window.floodDebug.node = new WaterRenderNode({ view });
+  const inside = boundary ? rasterizePolygons(boundary.polygons, grid) : null;
+  const flow = buildFlowField(grid, vec, inside);
+  const surface = buildWaterMesh(grid, flow);
+  water.data = {
+    flow: { w: flow.w, h: flow.h, tex: flow.tex },
+    surface,
+    boundary: boundary ? buildBoundaryMesh(boundary.polygons, flow, surface.frame) : null
+  };
+  waterNode = new WaterRenderNode({ view });
 
-  // stats
-  const s = flow.stats;
-  const areaKm2 = extent?.attributes?.Shape_Area ? extent.attributes.Shape_Area / 1e6 : s.areaKm2;
-  document.getElementById("sArea").innerHTML = `${fmt(areaKm2, 1)}<small>km²</small>`;
-  document.getElementById("sMean").innerHTML = `${fmt(s.vMean, 1)}<small>m/s</small>`;
-  document.getElementById("sMax").innerHTML = `${fmt(s.vMax, 1)}<small>m/s</small>`;
-  document.getElementById("stats").hidden = false;
-  setStatus(note, 1);
-  statusEl.hidden = !note;
-  panelEl.classList.add("ready");
+  showStats(flow.stats, boundary);
+  setStatus(vec ? "" : "The flow raster could not be loaded, so the flow follows the water-surface slope.", 1);
+  panel.classList.add("ready");
 } catch (e) {
   console.error(e);
   setStatus(`The water could not be built: ${e.message || e}`, null, true);
