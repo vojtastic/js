@@ -413,7 +413,9 @@ const levelLayer = new ElevationLayer({ url: CONFIG.urls.waterLevel });   // dat
 const flowRaster = new ImageryTileLayer({ url: CONFIG.urls.flowRaster }); // data (and the flow lines)
 
 const map = new Map({
-  basemap: new Basemap({ baseLayers: [new VectorTileLayer({ url: CONFIG.urls.basemap })] }),
+  // minScale/maxScale 0 = visible at every scale (the service limits it to 1:2.3M and larger, which blanks the
+  // far, low-detail tiles of a tilted 3D view)
+  basemap: new Basemap({ baseLayers: [new VectorTileLayer({ url: CONFIG.urls.basemap, minScale: 0, maxScale: 0 })] }),
   ground: new Ground({ layers: [dtmLayer] }),
   layers: [
     new SceneLayer({ url: CONFIG.urls.buildings, title: "Buildings" }),
@@ -617,8 +619,14 @@ function buildFlowField(g, vec, inside) {
   // water level (smoothed, extrapolated over the ring) and a far-reaching version for the polygon vertices
   const Ws = maskedBlur(S, core, w, h, 1, CONFIG.ringCells + 2);
   const WsWide = maskedBlur(S, core, w, h, 4, 3);
+  // surface = wet cells + ring (trimmed later by the polygon mask). Depth, velocity and foam are defined over the
+  // whole surface, so nothing in the shader steps at the 12 m wet-cell outline just inside the polygon edge.
+  const surface = dilate(wet, w, h, CONFIG.ringCells);
   const depth = new Float32Array(n);
-  for (let i = 0; i < n; i++) depth[i] = wet[i] && Ws[i] === Ws[i] ? Math.min(20, Math.max(0, Ws[i] - T[i])) : 0;
+  for (let i = 0; i < n; i++) {
+    if (!(Ws[i] === Ws[i])) surface[i] = 0;
+    else if (surface[i]) depth[i] = Math.min(20, Math.max(0, Ws[i] - T[i])) || 0;
+  }
 
   // velocity
   const vx = new Float32Array(n), vy = new Float32Array(n), known = new Uint8Array(n);
@@ -644,12 +652,13 @@ function buildFlowField(g, vec, inside) {
       vx[i] = -gx / slope * v; vy[i] = -gy / slope * v; known[i] = 1;
     }
   }
-  // light smoothing; wet cells without a known velocity take it from up to 3 cells around
+  // light smoothing; surface cells without a known velocity (gaps, the ring) take it from the nearest known cells
   const vxs = maskedBlur(vx, known, w, h, 1, 1), vys = maskedBlur(vy, known, w, h, 1, 1);
   let gaps = false;
-  for (let i = 0; i < n && !gaps; i++) gaps = wet[i] && !(vxs[i] === vxs[i]);
+  for (let i = 0; i < n && !gaps; i++) gaps = surface[i] && !(vxs[i] === vxs[i]);
   if (gaps) {
-    const vxw = maskedBlur(vx, known, w, h, 1, 3), vyw = maskedBlur(vy, known, w, h, 1, 3);
+    const reach = CONFIG.ringCells + 2;
+    const vxw = maskedBlur(vx, known, w, h, 1, reach), vyw = maskedBlur(vy, known, w, h, 1, reach);
     for (let i = 0; i < n; i++) if (!(vxs[i] === vxs[i])) { vxs[i] = vxw[i] || 0; vys[i] = vyw[i] || 0; }
   }
 
@@ -666,13 +675,12 @@ function buildFlowField(g, vec, inside) {
     foamRaw[i] = Math.min(1, 0.8 * smoothstep(0.04, 0.15, Math.hypot(gx, gy)) + 0.6 * smoothstep(2.3, 3.4, speed[i]));
   }
   const foam = maskedBlur(foamRaw, wet, w, h, 1, 1);
+  const foamWide = maskedBlur(foamRaw, wet, w, h, 1, CONFIG.ringCells + 2);
 
-  // surface = wet cells + ring (trimmed later by the polygon mask and the terrain)
-  const surface = dilate(wet, w, h, CONFIG.ringCells);
   const tex = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
-    if (!(Ws[i] === Ws[i])) { surface[i] = 0; continue; }
     if (!surface[i]) continue;
+    if (!(foam[i] === foam[i])) foam[i] = foamWide[i];
     tex[i * 4]     = vxs[i] || 0;
     tex[i * 4 + 1] = vys[i] || 0;
     tex[i * 4 + 2] = depth[i];
@@ -905,7 +913,7 @@ void main() {
   vec3 col = mix(body, skyColor(R, L), F) + uSunTint * spec;
 
   // foam: weirs, fast or rapidly changing flow, shoreline
-  float foamMask = clamp(f.w + (1.0 - smoothstep(0.05, 0.6, depth)) * 0.5, 0.0, 1.0);
+  float foamMask = clamp(f.w + (1.0 - smoothstep(0.05, 0.6, depth)) * 0.3, 0.0, 1.0);
   float pat = mix(0.6 * fA + 0.4 * fB, 0.5 * fA + 0.5 * fC, 1.0 - near);
   float foam = smoothstep(1.0 - foamMask, 1.0 - foamMask + 0.22, pat) * foamMask;
   col = mix(col, vec3(0.95, 0.93, 0.88) * uLight * uSunTint, foam * 0.85);
