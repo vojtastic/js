@@ -31,7 +31,9 @@
     /* ---------- panel ------------------------------------------------------ */
     .panel {
       position: absolute; top: 16px; right: 16px; z-index: 10;
-      width: 316px; max-height: calc(100% - 32px);
+      --panel-max: calc(100vh - 32px);   /* fallback for browsers without dvh */
+      --panel-max: calc(100dvh - 32px);  /* dvh: the visible height, also with mobile browser bars */
+      width: 316px; max-height: var(--panel-max);
       display: grid; grid-template-columns: 16px 1fr;
       background: var(--river); color: var(--staff);
       border-radius: 14px; overflow: hidden;
@@ -64,7 +66,12 @@
     }
     .panel.ready .gauge-mark { opacity: 1; }
 
-    .panel-body { padding: 16px 16px 14px; overflow-y: auto; min-width: 0; }
+    /* the body carries the same height limit as the panel, so it scrolls instead of being clipped */
+    .panel-body {
+      padding: 16px 16px 14px; min-width: 0; box-sizing: border-box;
+      max-height: var(--panel-max); overflow-y: auto; overscroll-behavior: contain;
+      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+    }
 
     .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .place { margin: 0 0 2px; color: var(--mist); font-size: 12px; }
@@ -167,7 +174,7 @@
     .switch:focus-visible { outline-offset: 3px; }
 
     @media (max-width: 600px) {
-      .panel { top: auto; bottom: 12px; right: 12px; left: 12px; width: auto; max-height: 60%; }
+      .panel { top: auto; bottom: 12px; right: 12px; left: 12px; width: auto; --panel-max: 60vh; --panel-max: 60dvh; }
       .q { font-size: 30px; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -1373,7 +1380,14 @@ try {
   waterNode = new WaterRenderNode({ view });
 
   showStats(flow.stats, boundary);
-  setStatus(vec ? "" : "The flow raster could not be loaded, so the flow follows the water-surface slope.", 1);
+  // context layers load on their own; name any that failed instead of leaving them silently missing
+  const context = map.layers.filter((l) => l.type === "scene").toArray();
+  const failed = (await Promise.allSettled(context.map((l) => l.load()))).flatMap((r, i) => (r.status === "rejected" ? [context[i].title] : []));
+  if (failed.length) console.warn("[flood] layers failed to load:", failed);
+  setStatus([
+    vec ? "" : "The flow raster could not be loaded, so the flow follows the water-surface slope.",
+    failed.length ? `Not loaded: ${failed.join(", ")}. Reload the page to try again.` : ""
+  ].filter(Boolean).join(" "), 1, failed.length > 0);
   panel.classList.add("ready");
 } catch (e) {
   console.error(e);
