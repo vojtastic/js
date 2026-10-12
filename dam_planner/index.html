@@ -1,0 +1,1961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Dam Planner</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet" />
+  <link id="esriTheme" rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/light/main.css" />
+  <script>
+    // Apply the saved or system theme before first paint, so there is no flash.
+    // The storage key must match THEME_KEY in the application script.
+    (function () {
+      var pref = "auto";
+      try { pref = localStorage.getItem("dam-planner-theme") || "auto"; } catch (e) {}
+      var dark = pref === "dark" || (pref === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      if (dark) document.getElementById("esriTheme").href = "https://js.arcgis.com/4.32/esri/themes/dark/main.css";
+    })();
+  </script>
+  <script src="https://js.arcgis.com/4.32/"></script>
+
+  <style>
+    /* ------------------------------------------------------------ tokens
+       Technical instrument look: hairline grids, label/value rows, tabular numbers.
+       Colour follows the map: orange = the dam, blue = the water. */
+    :root {
+      --ink: #121c24; --ink-2: #44525d; --ink-3: #6f7c86;
+      --line: #d9dfe4; --line-2: #e9edf0;
+      --surface: #ffffff; --surface-2: #f4f6f8; --surface-3: #e9edf1;
+      --dam: #c96a05;
+      --water: #1f6aa5; --water-soft: #e6f0f8; --water-fill: rgba(31, 106, 165, .10);
+      --ok: #1b7a4b; --ok-soft: #e5f4ec;
+      --warn: #9a5c06; --warn-soft: #fcf1df;
+      --bad: #b3302a; --bad-soft: #fbe9e8;
+      --chart-vol: #2a78d6; --chart-area: #008300; --chart-grid: #e6eaee; --chart-ink: #6f7c86;
+      --toast: #121c24; --toast-ink: #ffffff;
+      --shadow: 0 1px 2px rgba(18, 28, 36, .08), 0 10px 30px rgba(18, 28, 36, .16);
+      --r: 4px; --r-panel: 8px;
+      --font: "Barlow", "Segoe UI", system-ui, sans-serif;
+      --font-num: "Barlow Semi Condensed", "Barlow", system-ui, sans-serif;
+      color-scheme: light;
+    }
+    :root[data-theme="dark"] {
+      --ink: #e6ebef; --ink-2: #aab6c0; --ink-3: #7f8c97;
+      --line: #2d3942; --line-2: #25303a;
+      --surface: #161d23; --surface-2: #1d262e; --surface-3: #26313a;
+      --dam: #f0901f;
+      --water: #5aa9e6; --water-soft: #17293a; --water-fill: rgba(90, 169, 230, .13);
+      --ok: #4cc38a; --ok-soft: #15301f;
+      --warn: #e8a640; --warn-soft: #34280f;
+      --bad: #f07067; --bad-soft: #3a1b19;
+      --chart-vol: #3987e5; --chart-area: #2ea043; --chart-grid: #26313a; --chart-ink: #7f8c97;
+      --toast: #e6ebef; --toast-ink: #121c24;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .5);
+      color-scheme: dark;
+    }
+
+    html, body, #viewDiv { margin: 0; padding: 0; width: 100%; height: 100%; }
+    body { font-family: var(--font); color: var(--ink); background: var(--surface-2); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+    button, input, select { font: inherit; color: inherit; }
+    [hidden] { display: none !important; }
+    :focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
+    .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .ic.s { width: 14px; height: 14px; }
+    .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+    /* ------------------------------------------------------------ panel */
+    #panel {
+      position: absolute; top: 12px; left: 12px; z-index: 10;
+      width: 360px; max-height: calc(100% - 24px); display: flex; flex-direction: column;
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel);
+      box-shadow: var(--shadow); overflow: hidden;
+    }
+    .panel-scroll { overflow-y: auto; flex: 1; overscroll-behavior: contain; }
+
+    .brand { display: flex; gap: 12px; align-items: center; padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--line); }
+    .brand .logo, .map-btn .logo { flex: none; color: var(--ink); }
+    .brand div { flex: 1; min-width: 0; }
+    .brand h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+    .brand p { margin: 0; color: var(--ink-3); font-size: 12.5px; }
+
+    .step { border-bottom: 1px solid var(--line); }
+    .step-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line-2); }
+    .step-head h2 { margin: 0; font-size: 14.5px; font-weight: 600; flex: 1; }
+    .step-no { width: 22px; height: 22px; border-radius: var(--r); display: grid; place-items: center; font-family: var(--font-num); font-weight: 600; font-size: 13px; color: #fff; }
+    #stepDam .step-no { background: var(--dam); }
+    #results .step-no { background: var(--water); }
+    :root[data-theme="dark"] .step-no { color: #121c24; }
+    .step-body { padding: 14px 16px 16px; }
+    .lead { margin: 0 0 12px; color: var(--ink-2); }
+
+    /* ------------------------------------------------------------ buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      min-height: 34px; padding: 0 12px; border-radius: var(--r); cursor: pointer;
+      border: 1px solid var(--line); background: var(--surface); font-weight: 500;
+      transition: background-color .12s, border-color .12s, color .12s;
+    }
+    .btn:hover { background: var(--surface-2); border-color: var(--ink-3); }
+    .btn:disabled { opacity: .45; cursor: default; }
+    .btn:disabled:hover { background: var(--surface); border-color: var(--line); }
+    .btn.primary { width: 100%; min-height: 40px; background: var(--ink); border-color: var(--ink); color: var(--surface); }
+    .btn.primary:hover { opacity: .9; }
+    .btn.drawing { background: var(--dam); border-color: var(--dam); color: #fff; }
+    .btn.icon { width: 32px; min-height: 32px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-3); }
+    .btn.icon:hover { color: var(--ink); background: var(--surface-3); }
+    .btn.icon.danger:hover { color: var(--bad); background: var(--bad-soft); }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .link { border: 0; background: none; padding: 0; color: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+    /* ------------------------------------------------------------ data rows (label · value) */
+    .rows { border: 1px solid var(--line); border-radius: var(--r); }
+    .rowi { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 10px; padding: 7px 10px; min-height: 22px; }
+    .rowi + .rowi { border-top: 1px solid var(--line-2); }
+    .rowi > .ic { color: var(--ink-3); }
+    .rowi > label, .rowi > span:not(.num) { color: var(--ink-2); }
+    .rowi .val { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; text-align: right; }
+    .rowi .val small { font-family: var(--font); font-weight: 400; color: var(--ink-3); font-size: 12.5px; margin-left: 3px; }
+
+    .stepper { display: flex; align-items: stretch; height: 30px; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+    .stepper button { width: 28px; border: 0; background: var(--surface-2); cursor: pointer; color: var(--ink-2); display: grid; place-items: center; }
+    .stepper button:hover { background: var(--surface-3); color: var(--ink); }
+    .stepper input { width: 52px; border: 0; background: transparent; text-align: right; font-family: var(--font-num); font-size: 15px; font-weight: 600; -moz-appearance: textfield; padding: 0 2px; }
+    .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .unit { color: var(--ink-3); padding: 0 8px 0 3px; align-self: center; font-size: 13px; }
+    .input-s { width: 76px; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); text-align: right; font-family: var(--font-num); font-weight: 600; }
+    select.input-s { text-align: left; font-family: var(--font); font-weight: 500; width: 96px; }
+    select.input-s.wide { width: 150px; }
+
+    input[type=range] { width: 100%; margin: 6px 0 0; accent-color: var(--water); }
+
+    /* ------------------------------------------------------------ status / verdict / notes */
+    #status { display: none; margin: 12px 16px; padding: 9px 11px; border-radius: var(--r); background: var(--surface-2); }
+    #status.show { display: flex; gap: 8px; }
+    #status.error { background: var(--bad-soft); color: var(--bad); }
+
+    .msg { display: grid; grid-template-columns: 16px 1fr; gap: 1px 9px; padding: 9px 11px; border-radius: var(--r); font-size: 13px; }
+    .msg > .ic { margin-top: 2px; }
+    .msg strong { font-weight: 600; font-size: 14px; }
+    .msg span { grid-column: 2; color: var(--ink-2); }
+    .msg.ok   { background: var(--ok-soft); }   .msg.ok   > .ic, .msg.ok strong   { color: var(--ok); }
+    .msg.warn { background: var(--warn-soft); } .msg.warn > .ic, .msg.warn strong { color: var(--warn); }
+    .msg.bad  { background: var(--bad-soft); }  .msg.bad  > .ic, .msg.bad strong  { color: var(--bad); }
+    .msg.neutral { background: var(--surface-2); } .msg.neutral > .ic { color: var(--ink-3); }   /* not "info": that class is the round "i" button */
+    #notes { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+    #notes:empty { display: none; }
+    .step-body > :last-child { margin-bottom: 0; }
+    .step-head .info { width: 24px; height: 24px; }
+    #notes li span { grid-column: 2; }
+
+    /* ------------------------------------------------------------ reservoir readout */
+    .readout { display: grid; grid-template-columns: 1fr 1fr; margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r); }
+    .readout > div { padding: 9px 11px; }
+    .readout .main { grid-column: 1 / -1; border-bottom: 1px solid var(--line-2); }
+    .readout > div + div + div { border-left: 1px solid var(--line-2); }
+    .readout dt { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
+    .readout dd { margin: 2px 0 0; font-family: var(--font-num); font-weight: 600; font-variant-numeric: tabular-nums; font-size: 22px; line-height: 1.15; }
+    .readout .main dd { font-size: 34px; color: var(--water); }
+    .readout dd .u { font-family: var(--font); font-size: 13px; font-weight: 500; margin-left: 4px; color: var(--ink-3); }
+    .readout dd.min, .readout dd.min .u { color: var(--warn); }
+    #levelNote:empty { display: none; }
+    #levelNote { margin-top: 8px; }
+
+    /* level control: draggable chart + fixed-width readout + slider */
+    .level { margin-top: 16px; }
+    .level-head { display: flex; align-items: center; gap: 8px; }
+    .level-head .ic { color: var(--water); }
+    .level-head h3 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
+    #levelLabel { font-family: var(--font-num); font-size: 19px; font-weight: 600; color: var(--water); font-variant-numeric: tabular-nums; }
+    .legend { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
+    .legend i { display: inline-block; width: 16px; height: 0; border-top: 2.5px solid; margin-right: 6px; vertical-align: middle; }
+    .legend b { font-weight: 400; color: var(--ink-3); }
+    .chart-box { margin-top: 8px; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+    #chart { width: 100%; height: 190px; display: block; cursor: ns-resize; touch-action: none; }
+
+    /* each value sits in its own fixed cell, right-aligned, so nothing shifts while hovering */
+    .probe { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); background: var(--surface-2); font-size: 12.5px; }
+    .probe > div { padding: 6px 10px; display: flex; flex-direction: column; align-items: flex-end; }
+    .probe > div + div + div { border-left: 1px solid var(--line-2); }
+    .probe .cap { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid var(--line-2); color: var(--ink-3); }
+    .probe .cap b { font-weight: 600; color: var(--ink-2); }
+    .probe.hover .cap b { color: var(--water); }
+    .probe span { color: var(--ink-3); display: flex; align-items: center; gap: 4px; }
+    .probe output { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; color: var(--ink); white-space: nowrap; }
+    .probe output small { font-family: var(--font); font-weight: 400; font-size: 11.5px; color: var(--ink-3); margin-left: 2px; }
+
+    .opacity { display: grid; grid-template-columns: 16px 1fr auto; gap: 0 10px; align-items: center; margin-top: 14px; }
+    .opacity .ic { color: var(--ink-3); }
+    .opacity label { color: var(--ink-2); }
+    .opacity output { font-family: var(--font-num); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .opacity input { grid-column: 1 / -1; }
+
+    /* ------------------------------------------------------------ settings */
+    .settings summary { list-style: none; cursor: pointer; padding: 12px 16px; font-weight: 500; color: var(--ink-2); display: flex; align-items: center; gap: 10px; }
+    .settings summary::-webkit-details-marker { display: none; }
+    .settings summary .chev { margin-left: auto; transition: transform .15s; }
+    .settings[open] summary .chev { transform: rotate(90deg); }
+    .settings .step-body { padding-top: 0; }
+
+    /* ------------------------------------------------------------ info buttons + tooltip */
+    .lbl { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); }
+    .info { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: help; }
+    .info:hover, .info:focus-visible { color: var(--water); background: var(--water-soft); }
+    .with-info { position: relative; display: grid; }
+    .info.corner { position: absolute; top: -8px; right: -8px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+    .msg { position: relative; }
+    .msg .info.corner { top: 6px; right: 6px; box-shadow: none; background: transparent; }
+    #tooltip {
+      position: fixed; z-index: 50; max-width: 300px; padding: 7px 10px; border-radius: var(--r);
+      background: var(--toast); color: var(--toast-ink); font-size: 12.5px; line-height: 1.4;
+      box-shadow: var(--shadow); pointer-events: none; white-space: pre-line;
+    }
+
+    /* ------------------------------------------------------------ display preferences (theme, scene quality) */
+    .prefs { padding: 4px 16px 16px; border-top: 1px solid var(--line); }
+    .pref { margin-top: 12px; }
+    .pref-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--ink-2); }
+    .pref-head > .ic { color: var(--ink-3); }
+    .seg { display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; padding: 2px; gap: 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+    .seg button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; padding: 0 6px; border: 0; border-radius: 3px; background: none; color: var(--ink-2); cursor: pointer; font-size: 13px; white-space: nowrap; }
+    .seg button:hover { color: var(--ink); background: var(--surface-2); }
+    .pref-row { display: flex; align-items: center; justify-content: space-between; }
+    .pref-row .pref-head { margin-bottom: 0; }
+    .switch { position: relative; width: 38px; height: 22px; flex: none; padding: 0; border: 0; border-radius: 11px; background: var(--surface-3); cursor: pointer; transition: background-color .15s; }
+    .switch span { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
+    .switch[aria-checked="true"] { background: var(--water); }
+    .switch[aria-checked="true"] span { transform: translateX(16px); }
+    .seg button[aria-checked="true"] { background: var(--ink); color: var(--surface); }
+
+    /* ------------------------------------------------------------ hide / show panel */
+    #panel { transition: transform .25s ease, opacity .25s ease; }
+    body.panel-hidden #panel { transform: translateX(calc(-100% - 24px)); opacity: 0; pointer-events: none; }
+    .map-btn {
+      position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; align-items: center; gap: 8px;
+      height: 40px; padding: 0 10px 0 12px; border: 1px solid var(--line); border-radius: var(--r-panel);
+      background: var(--surface); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; cursor: pointer;
+    }
+    .map-btn:hover { background: var(--surface-2); }
+    .map-btn .ic { color: var(--ink-3); }
+    body.panel-hidden .map-toast { left: 50%; }
+    body.panel-hidden #progress { width: min(440px, calc(100% - 32px)); }
+
+    /* ------------------------------------------------------------ map overlays */
+    .map-toast {
+      position: absolute; left: calc(50% + 186px); transform: translateX(-50%); z-index: 20; box-sizing: border-box;
+      background: var(--toast); color: var(--toast-ink); border-radius: var(--r-panel); box-shadow: var(--shadow);
+    }
+    #drawHint { top: 16px; padding: 9px 14px; font-weight: 500; display: flex; gap: 8px; align-items: center; }
+    #drawHint kbd { font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; opacity: .75; }
+    #progress { bottom: 32px; width: min(440px, calc(100% - 420px)); padding: 11px 14px 12px; }
+    #progress .ptop { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    #progress .ptop span:first-of-type { flex: 1; }
+    #progress .pbar { height: 3px; margin: 9px 0 7px; background: color-mix(in srgb, var(--toast-ink) 18%, transparent); overflow: hidden; }
+    #progress .pfill { height: 100%; width: 0; background: var(--water); transition: width .2s linear; }
+    :root:not([data-theme="dark"]) #progress .pfill { background: #7cc0ee; }
+    #progress .pbottom { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 12.5px; opacity: .75; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+    @media (max-width: 700px) {
+      #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 58%; }
+      body.panel-hidden #panel { transform: translateY(calc(100% + 16px)); }
+      .map-btn { top: auto; bottom: 12px; }
+      .brand p { display: none; }
+      .map-toast { left: 50%; }
+      #drawHint { top: 10px; width: calc(100% - 48px); justify-content: center; }
+      #progress { bottom: auto; top: 10px; width: calc(100% - 32px); }
+    }
+  </style>
+</head>
+<body>
+  <!-- icon sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 32 32"><path d="M18.5 5h4.5l6 22h-10.5z" fill="currentColor" stroke="none"/><path d="M3 12.5h12M3 18.5h12M3 24.5h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".4" fill="none"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M9 4v16M15.5 10l-2 2 2 2"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V8l6-4v17M10 21V10l10 3v8M2 21h20M7 10v.1M7 14v.1M7 18v.1M14 15v.1M17 15v.1M14 18v.1M17 18v.1"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1116 0"/><path d="M12 17l4-5"/><circle cx="12" cy="17" r="1.3"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="i-balance" viewBox="0 0 24 24"><path d="M12 4v16M5 20h14M6 8h12M6 8l-3 6h6zM18 8l-3 6h6z"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></symbol>
+    <symbol id="i-auto" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-draw" viewBox="0 0 24 24"><path d="M4 17l5-6 4 3 7-8"/><circle cx="4" cy="17" r="1.6"/><circle cx="9" cy="11" r="1.6"/><circle cx="13" cy="14" r="1.6"/><circle cx="20" cy="6" r="1.6"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4v16M7 4L3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/></symbol>
+    <symbol id="i-height" viewBox="0 0 24 24"><path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/></symbol>
+    <symbol id="i-width" viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4M3 5v14M21 5v14"/></symbol>
+    <symbol id="i-crest" viewBox="0 0 24 24"><path d="M3 20h18M7 20l3-12h4l3 12M10 8h4"/><path d="M12 3v2"/></symbol>
+    <symbol id="i-ground" viewBox="0 0 24 24"><path d="M2 18l6-8 4 5 3-3 7 6z"/><path d="M12 15v4"/></symbol>
+    <symbol id="i-length" viewBox="0 0 24 24"><rect x="2" y="8" width="20" height="8" rx="1"/><path d="M6 8v3M10 8v4M14 8v3M18 8v4"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3s7 7.5 7 12a7 7 0 01-14 0c0-4.5 7-12 7-12z"/></symbol>
+    <symbol id="i-area" viewBox="0 0 24 24"><path d="M4 6l6-2 5 3 5-2v13l-5 2-5-3-6 2z"/><path d="M10 4v13M15 7v13"/></symbol>
+    <symbol id="i-depth" viewBox="0 0 24 24"><path d="M3 5h18M12 9v10M8 15l4 4 4-4"/></symbol>
+    <symbol id="i-waves" viewBox="0 0 24 24"><path d="M2 8c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 14c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 20c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/></symbol>
+    <symbol id="i-opacity" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 010 18z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
+    <symbol id="i-radius" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="1.5"/><path d="M12 12h9"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.5l9.5 17h-19z"/><path d="M12 10v4.5M12 17.6v.1"/></symbol>
+    <symbol id="i-bad" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24"><path d="M12 3a9 9 0 109 9"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z"/></symbol>
+  </svg>
+
+  <div id="viewDiv"></div>
+
+  <aside id="panel" aria-label="Dam planner">
+    <header class="brand">
+      <svg class="logo" width="28" height="28" aria-hidden="true"><use href="#i-logo"/></svg>
+      <div>
+        <h1>Dam Planner</h1>
+        <p>Reservoirs on DMR 5G terrain</p>
+      </div>
+      <button id="btnHide" class="btn icon" type="button" data-tip="Hide panel" aria-label="Hide panel">
+        <svg class="ic"><use href="#i-panel"/></svg>
+      </button>
+    </header>
+
+    <div class="panel-scroll">
+      <section class="step" id="stepDam">
+        <div class="step-head">
+          <span class="step-no">1</span>
+          <h2>Dam</h2>
+          <button id="btnClear" class="btn icon danger" title="Remove dam" aria-label="Remove dam" hidden>
+            <svg class="ic"><use href="#i-trash"/></svg>
+          </button>
+        </div>
+
+        <div class="step-body">
+          <div id="damEmpty">
+            <p class="lead">Draw the dam axis across a valley. Click to add points, double-click to finish. The reservoir is calculated automatically.</p>
+            <button id="btnDraw" class="btn primary">
+              <svg class="ic"><use href="#i-draw"/></svg>
+              <span>Draw dam axis</span>
+            </button>
+          </div>
+
+          <div id="damBody" hidden>
+            <div class="rows">
+              <div class="rowi">
+                <svg class="ic"><use href="#i-height"/></svg>
+                <span class="lbl"><label for="inHeight">Height</label><button type="button" class="info" id="heightInfo" aria-label="About the height" data-tip="Height is measured from the lowest ground on the axis to the crest."><svg class="ic s"><use href="#i-info"/></svg></button></span>
+                <div class="stepper">
+                  <button type="button" data-step="-1" aria-label="Lower by 1 m"><svg class="ic s" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+                  <input id="inHeight" type="number" value="30" min="1" max="400" step="1" inputmode="numeric" />
+                  <span class="unit">m</span>
+                  <button type="button" data-step="1" aria-label="Raise by 1 m"><svg class="ic s" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+                </div>
+              </div>
+              <div class="rowi">
+                <svg class="ic"><use href="#i-width"/></svg>
+                <label for="inWidth">Wall thickness</label>
+                <div class="stepper">
+                  <input id="inWidth" type="number" value="12" min="1" max="200" step="1" inputmode="numeric" />
+                  <span class="unit">m</span>
+                </div>
+              </div>
+              <div class="rowi">
+                <svg class="ic"><use href="#i-crest"/></svg>
+                <span>Crest elevation</span>
+                <span class="val" id="sCrest">–</span>
+              </div>
+              <div class="rowi">
+                <svg class="ic"><use href="#i-ground"/></svg>
+                <span>Lowest ground on axis</span>
+                <span class="val" id="sBed">–</span>
+              </div>
+              <div class="rowi">
+                <svg class="ic"><use href="#i-length"/></svg>
+                <span>Crest length</span>
+                <span class="val" id="sLength">–</span>
+              </div>
+            </div>
+
+            <div class="btn-row">
+              <button id="btnRedraw" class="btn"><svg class="ic"><use href="#i-edit"/></svg>Redraw axis</button>
+              <span class="with-info">
+                <button id="btnFlip" class="btn" disabled><svg class="ic"><use href="#i-flip"/></svg>Flip side</button>
+                <button type="button" class="info corner" id="sideInfo" aria-label="About the reservoir side" data-tip="The reservoir side is found automatically. Click the axis on the map to reshape it."><svg class="ic s"><use href="#i-info"/></svg></button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div id="status" role="status" aria-live="polite"></div>
+
+      <section class="step" id="results" hidden>
+        <div class="step-head">
+          <span class="step-no">2</span>
+          <h2>Reservoir</h2>
+          <button type="button" class="info" id="resultInfo" aria-label="About this calculation" data-tip=""><svg class="ic"><use href="#i-info"/></svg></button>
+        </div>
+        <div class="step-body">
+          <div id="verdict" class="msg">
+            <svg class="ic" id="verdictIcon"><use href="#i-ok"/></svg>
+            <strong id="verdictTitle"></strong>
+            <span id="verdictText"></span>
+            <button type="button" class="info corner" id="verdictInfo" aria-label="About this result" hidden><svg class="ic s"><use href="#i-info"/></svg></button>
+          </div>
+
+          <dl class="readout">
+            <div class="main"><dt><svg class="ic s"><use href="#i-drop"/></svg>Volume</dt><dd id="sVolume">–</dd></div>
+            <div><dt><svg class="ic s"><use href="#i-area"/></svg>Flooded area</dt><dd id="sArea">–</dd></div>
+            <div><dt><svg class="ic s"><use href="#i-depth"/></svg>Max depth</dt><dd id="sDepth">–</dd></div>
+          </dl>
+          <div id="levelNote"></div>
+
+          <div class="level">
+            <div class="level-head">
+              <svg class="ic"><use href="#i-waves"/></svg>
+              <h3>Water level</h3>
+              <span id="levelLabel"></span>
+            </div>
+            <div class="legend">
+              <span><i style="border-color:var(--chart-vol)"></i>Volume <b id="legendVolume"></b></span>
+              <span><i style="border-color:var(--chart-area); border-top-style: dashed"></i>Flooded area <b id="legendArea"></b></span>
+            </div>
+            <div class="chart-box">
+              <canvas id="chart" aria-label="Reservoir curves. Drag up or down to change the water level."></canvas>
+              <div class="probe" id="probe" aria-live="off">
+                <div class="cap"><b id="probeMode">Current level</b><span>Drag on the chart to set</span></div>
+                <div><span><svg class="ic s"><use href="#i-waves"/></svg>Level</span><output id="probeLevel">–</output></div>
+                <div><span><svg class="ic s"><use href="#i-drop"/></svg>Volume</span><output id="probeVol">–</output></div>
+                <div><span><svg class="ic s"><use href="#i-area"/></svg>Area</span><output id="probeArea">–</output></div>
+              </div>
+            </div>
+            <input id="inLevel" type="range" min="0" max="1" step="0.1" value="1" aria-label="Water level" />
+          </div>
+
+          <div class="opacity">
+            <svg class="ic"><use href="#i-opacity"/></svg>
+            <label for="inOpacity">Water opacity</label>
+            <output id="opacityLabel" for="inOpacity">70 %</output>
+            <input id="inOpacity" type="range" min="0" max="100" step="5" value="70" />
+          </div>
+
+          <ul id="notes"></ul>
+        </div>
+      </section>
+
+      <details class="settings">
+        <summary>
+          <svg class="ic"><use href="#i-settings"/></svg>
+          Analysis settings
+          <svg class="ic chev"><use href="#i-chev"/></svg>
+        </summary>
+        <div class="step-body">
+          <div class="rows">
+            <div class="rowi">
+              <svg class="ic"><use href="#i-ground"/></svg>
+              <span class="lbl"><label for="inTerrain">Terrain</label><button type="button" class="info" aria-label="About the terrain options" data-tip="DMR 5G (ČÚZK), the default&#10;Czech Republic only. Airborne laser scanning of the bare ground, ~2 m grid, height accuracy in decimetres. Best for precise volumes and shorelines.&#10;&#10;Esri World Elevation&#10;Worldwide, so it also covers valleys crossing the border and sites abroad. Compiled from many sources; here it is usually much coarser than DMR 5G and some sources include forest and buildings, so volumes are rougher."><svg class="ic s"><use href="#i-info"/></svg></button></span>
+              <select id="inTerrain" class="input-s wide">
+                <option value="cuzk" selected>DMR 5G (ČÚZK)</option>
+                <option value="esri">Esri World Elevation</option>
+              </select>
+            </div>
+            <div class="rowi">
+              <svg class="ic"><use href="#i-radius"/></svg>
+              <label for="inRadius">Start distance</label>
+              <span><input id="inRadius" class="input-s" type="number" value="3" min="0.5" max="40" step="0.5" /> <span class="unit">km</span></span>
+            </div>
+            <div class="rowi">
+              <svg class="ic"><use href="#i-expand"/></svg>
+              <span class="lbl"><label for="inMaxRadius">Max distance</label><button type="button" class="info" aria-label="About the search distance" data-tip="When the water reaches the edge of the analysis area, the area doubles in that direction, up to this distance from the dam."><svg class="ic s"><use href="#i-info"/></svg></button></span>
+              <span><input id="inMaxRadius" class="input-s" type="number" value="25" min="1" max="60" step="1" /> <span class="unit">km</span></span>
+            </div>
+            <div class="rowi">
+              <svg class="ic"><use href="#i-grid"/></svg>
+              <span class="lbl"><label for="inResolution">Grid resolution</label><button type="button" class="info" aria-label="About the grid resolution" data-tip="Finer grids give sharper shorelines and more precise volumes but take longer to load. Auto keeps the grid around 2.5 million cells."><svg class="ic s"><use href="#i-info"/></svg></button></span>
+              <select id="inResolution" class="input-s">
+                <option value="auto" selected>Auto</option>
+                <option value="2.388657133974685">~1.5 m</option>
+                <option value="4.77731426794937">~3 m</option>
+                <option value="9.554628535634155">~6 m</option>
+                <option value="19.10925707126831">~12 m</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <section class="prefs" aria-label="Display">
+        <div class="pref pref-row">
+          <div class="pref-head"><svg class="ic"><use href="#i-building"/></svg><span>3D buildings</span>
+            <button type="button" class="info" aria-label="About the 3D buildings" data-tip="Open 3D Buildings, hosted by Esri: worldwide building shapes from Overture Maps (OpenStreetMap, Microsoft and Esri Community Maps data), updated monthly. Heights come from the source data, so some buildings are estimated. Turn off to save memory and loading on slower computers."><svg class="ic s"><use href="#i-info"/></svg></button>
+          </div>
+          <button type="button" id="btnBuildings" class="switch" role="switch" aria-checked="true" aria-label="Show 3D buildings"><span></span></button>
+        </div>
+        <div class="pref">
+          <div class="pref-head"><svg class="ic"><use href="#i-auto"/></svg><span>Theme</span></div>
+          <div class="seg" role="radiogroup" aria-label="Theme">
+            <button type="button" role="radio" data-theme-pref="auto" data-tip="Follow the system setting"><svg class="ic s"><use href="#i-auto"/></svg>Auto</button>
+            <button type="button" role="radio" data-theme-pref="light"><svg class="ic s"><use href="#i-sun"/></svg>Light</button>
+            <button type="button" role="radio" data-theme-pref="dark"><svg class="ic s"><use href="#i-moon"/></svg>Dark</button>
+          </div>
+        </div>
+        <div class="pref">
+          <div class="pref-head">
+            <svg class="ic"><use href="#i-gauge"/></svg><span>Scene quality</span>
+            <button type="button" class="info" aria-label="About scene quality" data-tip="Performance: lower terrain detail, a flat water surface without animation or reflections, no sky. Best for older or integrated graphics.&#10;&#10;Balanced: the default. Animated water with reflections.&#10;&#10;Quality: the most terrain detail and the largest memory budget. Needs a dedicated graphics card.&#10;&#10;Terrain detail may only fully change after reloading the page; the choice is remembered."><svg class="ic s"><use href="#i-info"/></svg></button>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="Scene quality">
+            <button type="button" role="radio" data-quality="performance"><svg class="ic s"><use href="#i-bolt"/></svg>Performance</button>
+            <button type="button" role="radio" data-quality="balanced"><svg class="ic s"><use href="#i-balance"/></svg>Balanced</button>
+            <button type="button" role="radio" data-quality="quality"><svg class="ic s"><use href="#i-sparkle"/></svg>Quality</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <button id="btnShow" class="map-btn" type="button" aria-label="Show panel" hidden>
+    <svg class="logo" width="22" height="22" aria-hidden="true"><use href="#i-logo"/></svg>
+    <span>Dam Planner</span>
+    <svg class="ic"><use href="#i-chev"/></svg>
+  </button>
+
+  <div id="tooltip" role="tooltip" hidden></div>
+
+  <div id="drawHint" class="map-toast" role="status" hidden>
+    <svg class="ic"><use href="#i-draw"/></svg>
+    Click to add points, double-click to finish. <kbd>Esc</kbd> cancels.
+  </div>
+
+  <div id="progress" class="map-toast" role="status" aria-live="polite" hidden>
+    <div class="ptop"><svg class="ic spin"><use href="#i-loader"/></svg><span id="pLabel">Working</span><span id="pPct" class="num">0 %</span></div>
+    <div class="pbar"><div id="pFill" class="pfill"></div></div>
+    <div class="pbottom"><span id="pDetail"></span><button id="btnCancel" class="link">Cancel</button></div>
+  </div>
+
+  <script>
+    // =====================================================================
+    // FLOOD WORKER
+    // Runs off the main thread so the map and panel stay responsive. It keeps
+    // the last few elevation grids (changing only the dam height or the side
+    // does not resend them) and the result of the last fill. Requests:
+    //   "fill"  – flood from a start cell on each tested side of the dam up to
+    //             the crest, pick the reservoir side, return the curves.
+    //   "trace" – the water surface at a given level, as polygon rings.
+    // Written as a plain function so it can be started from a Blob URL.
+    // =====================================================================
+    function floodWorker(self) {
+      const NODATA_LIMIT = -9000;  // elevations below this are "no data"
+      const GROW = 3;              // cells the drawn surface reaches past the shoreline
+      const CURVE_STEPS = 120;     // samples of the elevation–area–volume curve
+      const GRID_CACHE = 2;        // elevation grids kept between requests (keep in sync with the page)
+
+      const grids = new Map();     // key -> Float32Array; Map order doubles as LRU order
+      let filled = null;           // the last fill: grid, flood costs, bounding box, version
+      let version = 0;             // increments with every fill; traces carry it back
+      let requestId = 0;           // request being processed, for progress messages
+
+      self.onmessage = (e) => {
+        const m = e.data;
+        requestId = m.id;
+        try {
+          if (m.type === "fill") {
+            self.postMessage(Object.assign({ type: "done", id: m.id }, fill(m)));
+          } else if (m.type === "trace") {
+            const t = trace(m.level);
+            self.postMessage(Object.assign({ type: "done", id: m.id }, t), t.rings.map((r) => r.buffer));
+          }
+        } catch (err) {
+          self.postMessage({ type: "error", id: m.id, code: err.code || null, message: String((err && err.message) || err) });
+        }
+      };
+
+      // Store a newly sent grid, or fetch a cached one (refreshing its LRU position).
+      function useGrid(key, elev) {
+        if (!elev) elev = grids.get(key);
+        if (!elev) {
+          const err = new Error("Elevation grid is not cached.");
+          err.code = "NO_GRID";
+          throw err;
+        }
+        grids.delete(key);
+        grids.set(key, elev);
+        while (grids.size > GRID_CACHE) grids.delete(grids.keys().next().value);
+        return elev;
+      }
+
+      // Priority-flood. cost[i] is the lowest water level at which cell i joins the
+      // water that starts at `seed`: the highest ground along the best path to it.
+      // Cells leave the heap in rising-cost order, so stopping at the crest yields
+      // exactly the cells a reservoir filled to the crest can reach. The heap
+      // arrays are passed in so both side tests share one allocation.
+      function flood(g, seed, crest, heap, onProgress) {
+        const { nx, ny, elev, barrier } = g;
+        if (seed < 0) return { error: "The ground next to the dam is outside the analysis area." };
+        if (barrier[seed]) return { error: "The start cell lies on the dam axis." };
+        const seedElev = elev[seed];
+        if (!(seedElev > NODATA_LIMIT)) return { error: "No elevation data next to the dam." };
+        if (seedElev >= crest) {
+          return { error: `The ground next to the dam's lowest point (${seedElev.toFixed(1)} m) is above the crest (${crest.toFixed(1)} m). Increase the dam height.` };
+        }
+
+        const cost = new Float32Array(nx * ny).fill(Infinity);
+        const hk = heap.keys, hv = heap.cells;
+        let hn = 0;
+        const push = (i, key) => {
+          let n = hn++;
+          while (n > 0) {
+            const p = (n - 1) >> 1;
+            if (hk[p] <= key) break;
+            hk[n] = hk[p]; hv[n] = hv[p]; n = p;
+          }
+          hk[n] = key; hv[n] = i;
+        };
+        const popTop = () => {          // removes hv[0]; caller has already read it
+          const lk = hk[--hn], lv = hv[hn];
+          let n = 0;
+          for (;;) {
+            const l = 2 * n + 1;
+            if (l >= hn) break;
+            const c = (l + 1 < hn && hk[l + 1] < hk[l]) ? l + 1 : l;
+            if (hk[c] >= lk) break;
+            hk[n] = hk[c]; hv[n] = hv[c]; n = c;
+          }
+          if (hn > 0) { hk[n] = lk; hv[n] = lv; }
+        };
+        const visit = (j, level) => {
+          if (cost[j] !== Infinity || barrier[j]) return;
+          const z = elev[j];
+          if (!(z > NODATA_LIMIT)) return;
+          const cj = z > level ? z : level;
+          cost[j] = cj;
+          push(j, cj);
+        };
+
+        cost[seed] = seedElev;
+        push(seed, seedElev);
+        const touched = { t: false, b: false, l: false, r: false };   // edges of the area the water reaches
+        let minElev = Infinity, escape = Infinity, count = 0;
+        let r0 = ny, r1 = -1, c0 = nx, c1 = -1;                       // bounding box of the water
+        while (hn > 0) {
+          const i = hv[0], level = hk[0];
+          popTop();
+          if (level >= crest) break;
+          if ((++count & 0x7fff) === 0) onProgress((level - seedElev) / (crest - seedElev));
+          const r = (i / nx) | 0, c = i - r * nx;
+          if (elev[i] < minElev) minElev = elev[i];
+          if (r < r0) r0 = r; if (r > r1) r1 = r;
+          if (c < c0) c0 = c; if (c > c1) c1 = c;
+          if (r === 0 || r === ny - 1 || c === 0 || c === nx - 1) {
+            if (r === 0) touched.t = true;
+            if (r === ny - 1) touched.b = true;
+            if (c === 0) touched.l = true;
+            if (c === nx - 1) touched.r = true;
+            if (level < escape) escape = level;   // lowest level at which water leaves the area
+          }
+          if (r > 0) visit(i - nx, level);
+          if (r < ny - 1) visit(i + nx, level);
+          if (c > 0) visit(i - 1, level);
+          if (c < nx - 1) visit(i + 1, level);
+        }
+        return { cost, touched, touchesEdge: escape < Infinity, escape, minElev, bbox: [r0, r1, c0, c1] };
+      }
+
+      function fill(m) {
+        const g = { nx: m.nx, ny: m.ny, cell: m.cell, xmin: m.xmin, ymax: m.ymax, elev: useGrid(m.key, m.elev), barrier: m.barrier };
+        const N = g.nx * g.ny, crest = m.crest;
+        const heap = { keys: new Float32Array(N), cells: new Int32Array(N) };
+
+        let lastSent = -1;
+        const report = (v) => {
+          if (v - lastSent < 0.01) return;
+          lastSent = v;
+          self.postMessage({ type: "progress", id: requestId, value: Math.min(1, Math.max(0, v)) });
+        };
+        const runs = m.sides.map((s, idx) => {
+          const run = flood(g, s.seed, crest, heap, (f) => report((idx + f) / m.sides.length));
+          run.sign = s.sign;
+          // Water reaching the cells just across the dam has gone around it.
+          if (!run.error) run.leak = s.checks.some((j) => run.cost[j] < crest);
+          return run;
+        });
+        const valid = runs.filter((r) => !r.error);
+        if (!valid.length) throw new Error(runs[0].error);
+
+        // The reservoir side is the one that holds water: it either never reaches the
+        // edge of the analysis area or has to rise higher before it does. The
+        // downstream valley drains out of the area without rising at all.
+        const holdsBetter = (a, b) => (a.escape !== b.escape ? a.escape > b.escape : a.minElev > b.minElev);
+        const best = valid.reduce((a, b) => (holdsBetter(b, a) ? b : a));
+        const chosen = (m.prefer && valid.find((r) => r.sign === m.prefer)) || best;
+        const other = valid.find((r) => r !== chosen);
+        const drains = !!other && chosen.touchesEdge && !chosen.leak && chosen.escape < other.escape - 0.01;
+
+        const cost = chosen.cost;
+        const cellArea = (m.cell * m.k) ** 2;   // true m² (Web Mercator scale correction)
+        filled = Object.assign(g, { cost, bbox: chosen.bbox, cellArea, version: ++version });
+
+        // Elevation–area–volume curve in one pass: each wet cell is counted from the
+        // first curve step at or above its cost (difference arrays, then running sums).
+        const lo = chosen.minElev, step = Math.max((crest - lo) / CURVE_STEPS, 1e-6);
+        const cnt = new Float64Array(CURVE_STEPS + 1), zsum = new Float64Array(CURVE_STEPS + 1);
+        const [r0, r1, c0, c1] = chosen.bbox;
+        for (let r = r0; r <= r1; r++) {
+          for (let i = r * g.nx + c0, end = r * g.nx + c1; i <= end; i++) {
+            if (cost[i] < crest) {
+              const b = Math.min(CURVE_STEPS, Math.max(0, Math.ceil((cost[i] - lo) / step)));
+              cnt[b] += 1; zsum[b] += g.elev[i];
+            }
+          }
+        }
+        const levels = [], area = [], volume = [];
+        for (let b = 0, n = 0, z = 0; b <= CURVE_STEPS; b++) {
+          n += cnt[b]; z += zsum[b];
+          const L = lo + b * step;
+          levels.push(L); area.push(n * cellArea); volume.push(cellArea * (L * n - z));
+        }
+
+        return {
+          version, side: chosen.sign, autoSide: best.sign, leak: chosen.leak, drains,
+          touched: chosen.touched, touchesEdge: chosen.touchesEdge, escape: chosen.escape, minElev: chosen.minElev,
+          curve: { levels, area, volume }, edgeRuns: edgeRuns(g, cost, crest)
+        };
+      }
+
+      // Stretches of the analysis-area border where the water (at crest level) leaves it.
+      function edgeRuns(g, cost, crest) {
+        const { nx, ny, cell, xmin, ymax } = g;
+        const xmax = xmin + nx * cell, ymin = ymax - ny * cell, runs = [];
+        const scan = (n, cellAt, segment) => {
+          let start = -1;
+          for (let t = 0; t <= n; t++) {
+            const wet = t < n && cost[cellAt(t)] < crest;
+            if (wet && start < 0) start = t;
+            if (!wet && start >= 0) { runs.push(segment(start, t)); start = -1; }
+          }
+        };
+        scan(nx, (t) => t, (a, b) => [xmin + a * cell, ymax, xmin + b * cell, ymax]);
+        scan(nx, (t) => (ny - 1) * nx + t, (a, b) => [xmin + a * cell, ymin, xmin + b * cell, ymin]);
+        scan(ny, (t) => t * nx, (a, b) => [xmin, ymax - a * cell, xmin, ymax - b * cell]);
+        scan(ny, (t) => t * nx + nx - 1, (a, b) => [xmax, ymax - a * cell, xmax, ymax - b * cell]);
+        return runs;
+      }
+
+      // Water surface at `level`. Works only inside the reservoir's bounding box.
+      // The mask is grown GROW cells past the shoreline (the terrain hides the extra
+      // and gives a smooth shore) and over the dam-axis cells (the page cuts it at the
+      // wall). Its boundary is then traced into rings: outer rings clockwise, holes
+      // counter-clockwise, as ArcGIS expects.
+      function trace(level) {
+        if (!filled) throw new Error("Nothing has been filled yet.");
+        const { nx, ny, cell, xmin, ymax, elev, barrier, cost, cellArea, bbox } = filled;
+        const pad = GROW + 1;
+        const R0 = Math.max(0, bbox[0] - pad), R1 = Math.min(ny - 1, bbox[1] + pad);
+        const C0 = Math.max(0, bbox[2] - pad), C1 = Math.min(nx - 1, bbox[3] + pad);
+        const w = C1 - C0 + 1, h = R1 - R0 + 1;
+
+        // 1 = wet; 2..GROW+1 = grown ring number; AXIS = dam-axis cell next to water
+        const AXIS = 255;
+        const mask = new Uint8Array(w * h);
+        let wetCells = 0, zSum = 0, atEdge = false;
+        for (let r = R0; r <= R1; r++) {
+          for (let c = C0, i = r * nx + C0, j = (r - R0) * w; c <= C1; c++, i++, j++) {
+            if (cost[i] < level) {
+              mask[j] = 1; wetCells++; zSum += elev[i];
+              if (r === 0 || r === ny - 1 || c === 0 || c === nx - 1) atEdge = true;
+            }
+          }
+        }
+        for (let ring = 1; ring <= GROW; ring++) {
+          for (let j = 0; j < mask.length; j++) {
+            if (mask[j] !== ring) continue;
+            const rr = (j / w) | 0, cc = j - rr * w, i = (rr + R0) * nx + cc + C0;
+            if (rr > 0) grow(j - w, i - nx, ring);
+            if (rr < h - 1) grow(j + w, i + nx, ring);
+            if (cc > 0) grow(j - 1, i - 1, ring);
+            if (cc < w - 1) grow(j + 1, i + 1, ring);
+          }
+        }
+        function grow(j, i, ring) {
+          if (mask[j]) return;
+          if (barrier[i]) { if (ring === 1) mask[j] = AXIS; return; }   // cover the axis, never cross it
+          if (elev[i] > NODATA_LIMIT) mask[j] = ring + 1;
+        }
+
+        // Directed boundary edges on the vertex lattice, wet side on the right.
+        // Direction bits: 1 = east, 2 = south, 4 = west, 8 = north.
+        const VX = w + 1;
+        const outs = new Uint8Array(VX * (h + 1));
+        const wet = (r, c) => r >= 0 && c >= 0 && r < h && c < w && mask[r * w + c] !== 0;
+        for (let r = 0; r < h; r++) {
+          for (let c = 0; c < w; c++) {
+            if (!mask[r * w + c]) continue;
+            if (!wet(r - 1, c)) outs[r * VX + c] |= 1;            // top edge, going east
+            if (!wet(r, c + 1)) outs[r * VX + c + 1] |= 2;        // right edge, going south
+            if (!wet(r + 1, c)) outs[(r + 1) * VX + c + 1] |= 4;  // bottom edge, going west
+            if (!wet(r, c - 1)) outs[(r + 1) * VX + c] |= 8;      // left edge, going north
+          }
+        }
+        const DR = [0, 1, 0, -1], DC = [1, 0, -1, 0];
+        const rings = [], corners = [];
+        for (let v0 = 0; v0 < outs.length; v0++) {
+          while (outs[v0]) {
+            let d0 = 0;
+            while (!(outs[v0] & (1 << d0))) d0++;
+            outs[v0] &= ~(1 << d0);
+            corners.length = 0;
+            corners.push(v0);
+            let v = v0, d = d0, guard = outs.length * 4;
+            while (guard--) {
+              const r = (v / VX) | 0;
+              v = (r + DR[d]) * VX + (v - r * VX) + DC[d];
+              // Prefer a right turn, then straight, then left: this keeps cells that
+              // only touch at a corner in separate rings.
+              let next = -1, closed = false;
+              for (let turn = 1; turn <= 3; turn++) {          // +1 right, +0 straight, +3 left (mod 4)
+                const cand = (d + (turn === 1 ? 1 : turn === 2 ? 0 : 3)) & 3;
+                if (v === v0 && cand === d0) { closed = true; break; }
+                if (outs[v] & (1 << cand)) { outs[v] &= ~(1 << cand); next = cand; break; }
+              }
+              if (closed || next < 0) break;
+              if (next !== d) corners.push(v);   // only corners become vertices
+              d = next;
+            }
+            if (corners.length < 3) continue;
+            const ring = new Float64Array((corners.length + 1) * 2);
+            for (let t = 0; t <= corners.length; t++) {
+              const vv = corners[t % corners.length], r = (vv / VX) | 0, c = vv - r * VX;
+              ring[2 * t] = xmin + (C0 + c) * cell;
+              ring[2 * t + 1] = ymax - (R0 + r) * cell;
+            }
+            rings.push(ring);
+          }
+        }
+        return { version: filled.version, level, area: wetCells * cellArea, volume: cellArea * (level * wetCells - zSum), atEdge, rings };
+      }
+    }
+  </script>
+  <script>
+    // =====================================================================
+    // APPLICATION
+    // Flow: draw the dam axis -> read the ground along it -> pick a height ->
+    // build an elevation grid around the dam -> flood it in the worker (growing
+    // the area while the water reaches its edge) -> draw water, wall, results.
+    // All map coordinates are Web Mercator; distances on the ground are map
+    // distances times the Web Mercator scale factor k = cos(latitude).
+    // =====================================================================
+    require([
+      "esri/Map",
+      "esri/views/SceneView",
+      "esri/Ground",
+      "esri/layers/ElevationLayer",
+      "esri/layers/GraphicsLayer",
+      "esri/layers/SceneLayer",
+      "esri/Graphic",
+      "esri/widgets/Sketch/SketchViewModel",
+      "esri/geometry/Polyline",
+      "esri/geometry/Polygon",
+      "esri/geometry/Point",
+      "esri/geometry/Extent",
+      "esri/geometry/SpatialReference",
+      "esri/geometry/support/webMercatorUtils",
+      "esri/geometry/operators/differenceOperator"
+    ], (Map, SceneView, Ground, ElevationLayer, GraphicsLayer, SceneLayer, Graphic, SketchViewModel,
+        Polyline, Polygon, Point, Extent, SpatialReference, webMercatorUtils, differenceOperator) => {
+
+      // ------------------------------------------------------------------ configuration
+      // Both terrains are tiled Web Mercator LERC elevation services.
+      const TERRAINS = {
+        cuzk: { label: "DMR 5G (ČÚZK)", subtitle: "Reservoirs on DMR 5G terrain",
+                url: "https://ags.cuzk.gov.cz/arcgis/rest/services/3D/dmr5g_wm/ImageServer" },
+        esri: { label: "Esri World Elevation", subtitle: "Reservoirs on Esri World Elevation",
+                url: "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer" }
+      };
+      const BASEMAPS = { light: "topo-vector", dark: "dark-gray-vector" };
+      const THEME_KEY = "dam-planner-theme";   // also read by the pre-paint script in <head>
+      const QUALITY_KEY = "dam-planner-quality";
+      const BUILDINGS_KEY = "dam-planner-buildings";
+      // Esri's public, global buildings (Overture Maps data, untextured, placed
+      // relative to the ground, so they sit correctly on either terrain).
+      const BUILDINGS_URL = "https://basemaps3d.arcgis.com/arcgis/rest/services/Open3D_Buildings_v1/SceneServer";
+      const BUILDING_COLORS = {
+        light: { fill: [236, 233, 226], edge: [120, 118, 110, 0.55] },
+        dark:  { fill: [62, 74, 86], edge: [18, 24, 30, 0.7] }
+      };
+      // Scene quality presets. Animated water keeps the GPU redrawing every frame, so
+      // "performance" swaps it for a flat surface; the quality profile sets the view's
+      // memory budget and level of detail.
+      const QUALITY = {
+        performance: { profile: "low", animatedWater: false, reflections: false, sky: false, buildingEdges: false },
+        balanced:    { profile: "medium", animatedWater: true, reflections: true, sky: true, buildingEdges: true },
+        quality:     { profile: "high", animatedWater: true, reflections: true, sky: true, buildingEdges: true }
+      };
+      const NODATA = -9999;
+      const MIN_CELL = 2.388657133974685;      // finest tile level of both services (~1.5 m on the ground in CZ)
+      const AUTO_MAX_CELLS = 2.5e6;            // grid size targeted by "Auto" resolution
+      const HARD_MAX_CELLS = 6e6;              // never build a larger grid
+      const GRID_CACHE = 2;                    // elevation grids the worker keeps (same as in the worker)
+      const MAX_HEIGHT = 400;
+      const WM = SpatialReference.WebMercator;
+      const EARTH_RADIUS = 6378137;
+
+      // ------------------------------------------------------------------ DOM helpers
+      const $ = (id) => document.getElementById(id);
+      const el = {
+        draw: $("btnDraw"), redraw: $("btnRedraw"), flip: $("btnFlip"), clear: $("btnClear"), cancel: $("btnCancel"),
+        height: $("inHeight"), width: $("inWidth"), level: $("inLevel"), opacity: $("inOpacity"),
+        radius: $("inRadius"), maxRadius: $("inMaxRadius"), resolution: $("inResolution"), terrain: $("inTerrain"),
+        status: $("status"), results: $("results"), notes: $("notes"), chart: $("chart"), drawHint: $("drawHint"),
+        heightTip: $("heightInfo"), sideTip: $("sideInfo"), resultTip: $("resultInfo")
+      };
+      const num = (input, fallback, min, max) => {
+        const v = parseFloat(input.value);
+        return Math.min(max, Math.max(min, Number.isFinite(v) ? v : fallback));
+      };
+
+      // ------------------------------------------------------------------ state
+      let terrainId = "cuzk";
+      let damGraphic = null;     // the drawn axis (a sketch graphic)
+      let sideOverride = null;   // null = automatic; +1 / −1 = left / right of the drawn line
+      let autoHeight = false;    // derive the height from the terrain on the next calculation
+      let heightIsAuto = false;  // the height shown was set automatically
+      let wall = null;           // { paths, bed, crest } of the wall currently drawn
+      let result = null;         // the last complete calculation
+      let lastTrace = null;      // the last water surface drawn (to re-cut it without the worker)
+      let lastArea = null;       // { key, margins } of the last calculation's final analysis area
+      let runId = 0;             // increments per calculation; older runs see they are stale
+      let activeAbort = null;    // AbortController of the running calculation
+      let showBuildings = true;  // 3D buildings switch (remembered)
+      try { showBuildings = localStorage.getItem(BUILDINGS_KEY) !== "off"; } catch (e) { /* storage blocked */ }
+
+      // ------------------------------------------------------------------ map and view
+      let elevationLayer = new ElevationLayer({ url: TERRAINS[terrainId].url });
+      const sketchLayer = new GraphicsLayer({ title: "Dam axis", elevationInfo: { mode: "on-the-ground" } });
+      const wallLayer = new GraphicsLayer({ title: "Dam wall", elevationInfo: { mode: "absolute-height" } });
+      const waterLayer = new GraphicsLayer({ title: "Reservoir", elevationInfo: { mode: "absolute-height" }, opacity: 0.7 });
+      const analysisLayer = new GraphicsLayer({ title: "Analysis area", elevationInfo: { mode: "on-the-ground" } });
+      // Geometry only: no popups and no attributes are requested.
+      const buildingsLayer = new SceneLayer({ url: BUILDINGS_URL, title: "3D buildings", popupEnabled: false, outFields: [], visible: showBuildings });
+
+      const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      let themePref = "auto";
+      try { themePref = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* storage blocked */ }
+      const isDark = () => themePref === "dark" || (themePref === "auto" && darkQuery.matches);
+      let qualityPref = "balanced";
+      try { qualityPref = localStorage.getItem(QUALITY_KEY) || "balanced"; } catch (e) { /* storage blocked */ }
+      if (!QUALITY[qualityPref]) qualityPref = "balanced";
+
+      const map = new Map({
+        basemap: BASEMAPS[isDark() ? "dark" : "light"],
+        ground: new Ground({ layers: [elevationLayer] }),
+        layers: [buildingsLayer, analysisLayer, waterLayer, wallLayer, sketchLayer]
+      });
+      const view = new SceneView({
+        container: "viewDiv",
+        map,
+        // Berounka valley near Roztoky u Křivoklátu – change to your area of interest.
+        camera: { position: { longitude: 13.862, latitude: 49.992, z: 1900 }, heading: 8, tilt: 66 },
+        qualityProfile: QUALITY[qualityPref].profile,   // most reliable when set before the view starts
+        environment: { lighting: { type: "virtual" } }
+      });
+      view.ui.move(["zoom", "navigation-toggle", "compass"], "top-right");   // the panel sits on the left
+
+      const symbols = {
+        water: { type: "polygon-3d", symbolLayers: [{ type: "water", color: "#2b5d8a", waveDirection: 180, waveStrength: "calm", waterbodySize: "large" }] },
+        flatWater: { type: "polygon-3d", symbolLayers: [{ type: "fill", material: { color: "#2b5d8a" }, outline: null }] },
+        boundary: { type: "line-3d", symbolLayers: [{ type: "line", size: 2, material: { color: [60, 70, 78, 0.85] }, pattern: { type: "style", style: "dash" } }] },
+        exit: { type: "line-3d", symbolLayers: [{ type: "line", size: 6, material: { color: [215, 30, 30] } }] },
+        axis: { type: "line-3d", symbolLayers: [{ type: "line", size: 3, material: { color: [240, 140, 20] } }] }
+      };
+
+      // Building symbology follows the theme; edges are dropped in Performance mode.
+      let buildingStyle = "";
+      function styleBuildings() {
+        const mode = isDark() ? "dark" : "light", edges = QUALITY[qualityPref].buildingEdges;
+        if (buildingStyle === mode + edges) return;   // unchanged: keep the layer's current renderer
+        buildingStyle = mode + edges;
+        const c = BUILDING_COLORS[mode];
+        buildingsLayer.renderer = {
+          type: "simple",
+          symbol: {
+            type: "mesh-3d",
+            symbolLayers: [{
+              type: "fill",
+              material: { color: c.fill, colorMixMode: "replace" },
+              edges: edges ? { type: "solid", color: c.edge, size: 0.5 } : null
+            }]
+          }
+        };
+      }
+
+      // ------------------------------------------------------------------ theme
+      // Follows the system setting unless the footer switch overrides it. The
+      // basemap, the ArcGIS widget theme, map outlines and the chart follow along.
+      let chartColors = null;   // read from CSS once per theme change
+      function applyTheme() {
+        const mode = isDark() ? "dark" : "light";
+        document.documentElement.dataset.theme = mode;
+        const css = `https://js.arcgis.com/4.32/esri/themes/${mode}/main.css`;
+        if ($("esriTheme").href !== css) $("esriTheme").href = css;
+        if (!map.basemap || map.basemap.id !== BASEMAPS[mode]) map.basemap = BASEMAPS[mode];
+        document.querySelectorAll("[data-theme-pref]").forEach((b) =>
+          b.setAttribute("aria-checked", String(b.dataset.themePref === themePref)));
+        symbols.boundary.symbolLayers[0].material.color = mode === "dark" ? [210, 220, 228, 0.85] : [60, 70, 78, 0.85];
+        styleBuildings();
+        const style = getComputedStyle(document.documentElement), token = (n) => style.getPropertyValue(n).trim();
+        chartColors = {
+          ink: token("--chart-ink"), grid: token("--chart-grid"), volume: token("--chart-vol"),
+          area: token("--chart-area"), level: token("--water"), fill: token("--water-fill"), surface: token("--surface")
+        };
+        if (result) { drawAnalysis(result); requestChart(); }
+      }
+      document.querySelectorAll("[data-theme-pref]").forEach((b) => b.addEventListener("click", () => {
+        themePref = b.dataset.themePref;
+        try { localStorage.setItem(THEME_KEY, themePref); } catch (e) { /* storage blocked */ }
+        applyTheme();
+      }));
+      darkQuery.addEventListener("change", () => { if (themePref === "auto") applyTheme(); });
+      applyTheme();
+
+      // ------------------------------------------------------------------ scene quality
+      // Water style, reflections and sky change immediately. The quality profile is
+      // applied at startup and also set live; the SDK may only fully apply a new
+      // profile after a reload, which is why the choice is remembered.
+      function applyQuality() {
+        const q = QUALITY[qualityPref];
+        document.querySelectorAll("[data-quality]").forEach((b) =>
+          b.setAttribute("aria-checked", String(b.dataset.quality === qualityPref)));
+        try { if (view.qualityProfile !== q.profile) view.qualityProfile = q.profile; } catch (e) { /* startup-only in some versions */ }
+        view.environment.atmosphereEnabled = q.sky;
+        view.environment.starsEnabled = q.sky;
+        const lighting = view.environment.lighting;
+        if (lighting && "waterReflectionEnabled" in lighting) lighting.waterReflectionEnabled = q.reflections;
+        styleBuildings();
+        if (lastTrace && result) drawWater(lastTrace);   // swap animated / flat water
+      }
+      document.querySelectorAll("[data-quality]").forEach((b) => b.addEventListener("click", () => {
+        qualityPref = b.dataset.quality;
+        try { localStorage.setItem(QUALITY_KEY, qualityPref); } catch (e) { /* storage blocked */ }
+        applyQuality();
+      }));
+      applyQuality();
+
+      // ------------------------------------------------------------------ 3D buildings
+      // A hidden layer loads nothing, so turning it off also saves memory and bandwidth.
+      const btnBuildings = $("btnBuildings");
+      btnBuildings.setAttribute("aria-checked", String(showBuildings));
+      btnBuildings.addEventListener("click", () => {
+        showBuildings = !showBuildings;
+        buildingsLayer.visible = showBuildings;
+        btnBuildings.setAttribute("aria-checked", String(showBuildings));
+        try { localStorage.setItem(BUILDINGS_KEY, showBuildings ? "on" : "off"); } catch (e) { /* storage blocked */ }
+      });
+
+      // ------------------------------------------------------------------ worker client
+      const worker = new Worker(URL.createObjectURL(
+        new Blob([`(${floodWorker.toString()})(self);`], { type: "text/javascript" })
+      ));
+      const pending = new globalThis.Map();   // request id -> { resolve, reject, onProgress }
+      const workerGrids = [];                 // keys of grids the worker holds, in its LRU order
+      let msgId = 0;
+      worker.onmessage = (e) => {
+        const d = e.data, p = pending.get(d.id);
+        if (!p) return;
+        if (d.type === "progress") { if (p.onProgress) p.onProgress(d.value); return; }
+        pending.delete(d.id);
+        if (d.type === "error") p.reject(Object.assign(new Error(d.message), { code: d.code }));
+        else p.resolve(d);
+      };
+      worker.onerror = (e) => {   // a crashed worker must not leave requests hanging
+        pending.forEach((p) => p.reject(new Error("The calculation failed: " + (e.message || "worker error"))));
+        pending.clear();
+        workerGrids.length = 0;
+      };
+      function callWorker(msg, transfer = [], onProgress = null) {
+        const id = ++msgId;
+        return new Promise((resolve, reject) => {
+          pending.set(id, { resolve, reject, onProgress });
+          worker.postMessage(Object.assign({ id }, msg), transfer);
+        });
+      }
+      // Mirror the worker's grid LRU so we know which grids need not be resent.
+      function touchWorkerGrid(key) {
+        const i = workerGrids.indexOf(key);
+        if (i >= 0) workerGrids.splice(i, 1);
+        workerGrids.push(key);
+        while (workerGrids.length > GRID_CACHE) workerGrids.shift();
+      }
+
+      // ------------------------------------------------------------------ status and progress
+      function setStatus(text, mode) {
+        el.status.className = "show" + (mode ? " " + mode : "");
+        el.status.textContent = text;
+      }
+      function clearStatus() { el.status.className = ""; el.status.textContent = ""; }
+
+      // Each pass (the first calculation, then every enlargement of the analysis area)
+      // runs 0–100 %: loading elevation 0–75 %, filling 75–98 %, drawing 98–100 %.
+      const progress = {
+        show(label, frac, detail) {
+          clearStatus();
+          $("progress").hidden = false;
+          if (label != null) $("pLabel").textContent = label;
+          if (detail != null) $("pDetail").textContent = detail;
+          const pct = Math.round(Math.max(0, Math.min(1, frac)) * 100);
+          $("pFill").style.width = pct + "%";
+          $("pPct").textContent = pct + " %";
+        },
+        hide() { $("progress").hidden = true; }
+      };
+      el.cancel.addEventListener("click", () => {
+        clearResults();   // the half-finished result no longer matches the inputs
+        setStatus("Calculation cancelled. Change the dam or a setting to run it again.");
+      });
+
+      // ------------------------------------------------------------------ drawing the dam axis
+      const sketch = new SketchViewModel({
+        view,
+        layer: sketchLayer,
+        polylineSymbol: symbols.axis,
+        defaultCreateOptions: { hasZ: false },
+        defaultUpdateOptions: { tool: "reshape", enableZ: false, toggleToolOnClick: false },
+        updateOnGraphicClick: true
+      });
+
+      function setDrawing(on) {
+        [el.draw, el.redraw].forEach((b) => b.classList.toggle("drawing", on));
+        el.draw.querySelector("span").textContent = on ? "Drawing… press Esc to cancel" : "Draw dam axis";
+        el.drawHint.hidden = !on;
+      }
+      function showDamControls(on) {
+        $("damEmpty").hidden = on;
+        $("damBody").hidden = !on;
+        el.clear.hidden = !on;
+      }
+      function startDrawing() {
+        sketch.cancel();
+        clearResults();
+        clearStatus();
+        if (damGraphic) { sketchLayer.remove(damGraphic); damGraphic = null; }
+        showDamControls(false);
+        setDrawing(true);
+        sketch.create("polyline");
+      }
+      // A new or reshaped axis always gets a fresh automatic height.
+      function axisChanged() {
+        autoHeight = true;
+        calculate();
+      }
+      el.draw.addEventListener("click", startDrawing);
+      el.redraw.addEventListener("click", startDrawing);
+      window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !el.drawHint.hidden) sketch.cancel(); });
+      sketch.on("create", (e) => {
+        if (e.state === "complete") {
+          setDrawing(false);
+          damGraphic = e.graphic;
+          sideOverride = null;
+          showDamControls(true);
+          axisChanged();
+        } else if (e.state === "cancel") {
+          setDrawing(false);
+        }
+      });
+      sketch.on("update", (e) => { if (e.state === "complete" && !e.aborted && damGraphic) axisChanged(); });
+      sketch.on("delete", clearAll);
+      el.clear.addEventListener("click", clearAll);
+
+      // ------------------------------------------------------------------ inputs
+      let heightTimer = null;
+      el.height.addEventListener("input", () => {   // typing: wait for a pause before recalculating
+        heightIsAuto = false;
+        clearTimeout(heightTimer);
+        heightTimer = setTimeout(calculate, 450);
+      });
+      document.querySelectorAll(".stepper [data-step]").forEach((b) => b.addEventListener("click", () => {
+        el.height.value = num(el.height, 1, 1, MAX_HEIGHT) + parseFloat(b.dataset.step);
+        el.height.value = num(el.height, 1, 1, MAX_HEIGHT);
+        el.height.dispatchEvent(new Event("input"));
+      }));
+      el.width.addEventListener("input", () => {     // purely visual: redraw the wall and re-cut the water
+        if (wall) drawWall();
+        if (result) { result.cut = damCut(result); if (lastTrace) drawWater(lastTrace); }
+      });
+      [el.radius, el.maxRadius, el.resolution].forEach((input) => input.addEventListener("change", calculate));
+      el.terrain.addEventListener("change", () => {
+        terrainId = el.terrain.value;
+        elevationLayer = new ElevationLayer({ url: TERRAINS[terrainId].url });
+        map.ground.layers = [elevationLayer];
+        document.querySelector(".brand p").textContent = TERRAINS[terrainId].subtitle;
+        if (damGraphic) axisChanged();   // new ground, new maximum height
+      });
+      el.level.addEventListener("input", () => showLevel(parseFloat(el.level.value)));
+      el.opacity.addEventListener("input", () => {
+        waterLayer.opacity = el.opacity.value / 100;
+        $("opacityLabel").value = `${el.opacity.value} %`;
+      });
+      el.flip.addEventListener("click", () => {
+        if (!result) return;
+        const flipped = -result.side;
+        sideOverride = flipped === result.autoSide ? null : flipped;
+        calculate();
+      });
+
+      // ------------------------------------------------------------------ calculation
+      async function calculate() {
+        if (!damGraphic) return;
+        const run = ++runId;
+        const stale = () => run !== runId;
+        if (activeAbort) activeAbort.abort();
+        const abort = activeAbort = new AbortController();
+        try {
+          progress.show("Reading the ground along the dam axis", 0, "");
+          const paths = cleanPaths(toWebMercator(damGraphic.geometry).paths);
+          if (!paths.length) throw new Error("The dam axis needs at least two distinct points.");
+          const axis = await profileAxis(paths, abort.signal);
+          if (stale()) return;
+
+          // A new axis starts at half the highest dam it can hold: axes are usually
+          // drawn generously long, and the full height floods a large area slowly.
+          if (autoHeight) {
+            autoHeight = false;
+            if (!(axis.maxHeight >= 1)) {
+              throw new Error("The dam axis does not climb the valley sides: one of its ends is less than 1 m above " +
+                "its lowest point, so it cannot hold any water. Draw the axis across the whole valley, up both slopes.");
+            }
+            el.height.value = Math.max(1, Math.min(MAX_HEIGHT, Math.floor(axis.maxHeight / 2)));
+            heightIsAuto = true;
+          }
+          const height = num(el.height, 30, 1, MAX_HEIGHT);
+          el.height.value = height;
+          const crest = axis.bed + height;
+          wall = { paths, bed: axis.bed, crest };
+          drawWall();
+
+          // Flood, enlarging the analysis area towards the edges the water reaches.
+          // When only the height or the side changed, start from the area the last
+          // calculation ended with: its grid is still in the worker, so nothing reloads.
+          const startKm = num(el.radius, 3, 0.5, 40);
+          const maxKm = Math.max(startKm, num(el.maxRadius, 25, 1, 60));
+          const areaKey = JSON.stringify([paths, terrainId, el.resolution.value, startKm, maxKm]);
+          const margins = lastArea && lastArea.key === areaKey
+            ? Object.assign({}, lastArea.margins)
+            : { l: startKm, r: startKm, t: startKm, b: startKm };
+          let first = null, res = null;
+          for (let pass = 1; ; pass++) {
+            res = await fillPass({
+              paths, low: axis.low, crest, margins, pass, stale, signal: abort.signal,
+              sides: first ? [first.side] : [1, -1],       // the first pass tests both sides
+              prefer: first ? null : sideOverride
+            });
+            if (!res) return;
+            if (first) res.autoSide = first.autoSide; else first = res;
+            if (res.leak || res.drains || !res.touchesEdge) break;
+            let grew = false;
+            for (const edge of ["l", "r", "t", "b"]) {
+              if (res.touched[edge] && margins[edge] < maxKm) { margins[edge] = Math.min(maxKm, margins[edge] * 2); grew = true; }
+            }
+            if (!grew) break;
+            progress.show(`Extending the analysis area (up to ${Math.max(...Object.values(margins))} km)`, 0,
+              "The water reached the edge of the area, recalculating on a larger one.");
+          }
+
+          lastArea = { key: areaKey, margins: Object.assign({}, margins) };
+          result = Object.assign(res, {
+            paths, crest, bed: axis.bed, height, maxHeight: axis.maxHeight, heightIsAuto,
+            startZ: axis.startZ, endZ: axis.endZ, lengthM: pathLength(paths) * res.grid.k,
+            maxKm, reachKm: Math.max(...Object.values(margins)),
+            truncated: res.touchesEdge && !res.leak && !res.drains
+          });
+          result.cut = damCut(result);
+          progress.show("Drawing the water surface", 0.98, null);
+          drawAnalysis(result);
+          showResults(result);
+          await showLevel(crest);
+          if (!stale()) progress.hide();
+        } catch (err) {
+          if (stale() || err.name === "AbortError") return;
+          progress.hide();
+          console.error(err);
+          setStatus(err.message || String(err), "error");
+        } finally {
+          if (activeAbort === abort) activeAbort = null;
+        }
+      }
+
+      // Ground profile along the axis: lowest point (the riverbed), its direction, the
+      // end elevations, and the highest crest both ends can hold.
+      async function profileAxis(paths, signal) {
+        const q = await elevationLayer.queryElevation(
+          new Polyline({ paths: densify(paths, 2), spatialReference: WM }),
+          { demResolution: "finest-contiguous", noDataValue: NODATA, signal }
+        );
+        const pts = q.geometry.paths.flat();
+        const valid = (z) => z > NODATA + 1;
+        let low = -1;
+        pts.forEach((p, i) => { if (valid(p[2]) && (low < 0 || p[2] < pts[low][2])) low = i; });
+        if (low < 0) {
+          throw new Error(terrainId === "cuzk"
+            ? "No elevation data along the dam axis. DMR 5G covers the Czech Republic only; switch the terrain to Esri World Elevation in Analysis settings."
+            : "No elevation data along the dam axis.");
+        }
+        const bed = pts[low][2];
+        const startZ = pts[0][2], endZ = pts[pts.length - 1][2];
+        const ends = [startZ, endZ].filter(valid);
+        const [x, y] = pts[low];
+        return {
+          bed, startZ, endZ,
+          maxHeight: ends.length ? Math.floor(Math.min(...ends) - bed) : NaN,
+          low: { x, y, dir: segmentDirAt(paths, x, y) }
+        };
+      }
+
+      // One flood pass on a grid covering the dam plus `margins` (km per side).
+      // Returns the worker's fill result plus the grid, or null if superseded.
+      async function fillPass({ paths, low, crest, margins, sides, prefer, pass, stale, signal }) {
+        const grid = gridAround(paths, margins);
+        const barrier = rasteriseAxis(paths, grid);
+        const message = {
+          type: "fill", key: grid.key, nx: grid.nx, ny: grid.ny, cell: grid.cell, xmin: grid.xmin, ymax: grid.ymax,
+          k: grid.k, crest, barrier, prefer,
+          sides: sides.map((sign) => ({ sign, seed: startCell(low, sign, grid, barrier), checks: crossCells(paths, sign, grid, barrier) }))
+        };
+        const prefix = pass > 1 ? `Pass ${pass}: ` : "";
+        const size = `${((grid.xmax - grid.xmin) * grid.k / 1000).toFixed(1)} × ${((grid.ymax - grid.ymin) * grid.k / 1000).toFixed(1)} km, ` +
+          `${(grid.nx * grid.ny / 1e6).toFixed(1)} M cells at ~${(grid.cell * grid.k).toFixed(1)} m`;
+        const fillLabel = prefix + "Filling the reservoir" + (sides.length > 1 ? " (testing both sides)" : "");
+        const onProgress = (f) => { if (!stale()) progress.show(fillLabel, 0.75 + 0.23 * f, null); };
+
+        let res = null;
+        if (workerGrids.includes(grid.key)) {          // the worker still has this grid
+          progress.show(fillLabel, 0.75, size);
+          try { res = await callWorker(message, [], onProgress); touchWorkerGrid(grid.key); }
+          catch (err) { if (err.code !== "NO_GRID") throw err; workerGrids.splice(workerGrids.indexOf(grid.key), 1); }
+          if (stale()) return null;
+        }
+        if (!res) {
+          const elev = await loadElevationGrid(grid, signal, stale,
+            (f, what) => progress.show(prefix + "Loading elevation", 0.75 * f, `${what}, ${size}`));
+          if (!elev) return null;
+          progress.show(fillLabel, 0.75, size);
+          res = await callWorker(Object.assign(message, { elev }), [elev.buffer], onProgress);
+          touchWorkerGrid(grid.key);
+          if (stale()) return null;
+        }
+        return Object.assign(res, { grid });
+      }
+
+      // Grid covering the dam axis plus margins. The cell size follows the resolution
+      // setting, capped so the grid never exceeds HARD_MAX_CELLS.
+      function gridAround(paths, margins) {
+        const pts = paths.flat(), xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+        const k = mercatorScale((Math.min(...ys) + Math.max(...ys)) / 2);
+        const toMap = (km) => (km * 1000) / k;
+        const xmin = Math.min(...xs) - toMap(margins.l), ymax = Math.max(...ys) + toMap(margins.t);
+        const w = Math.max(...xs) + toMap(margins.r) - xmin, h = ymax - (Math.min(...ys) - toMap(margins.b));
+        let cell = el.resolution.value === "auto" ? Math.max(MIN_CELL, Math.sqrt((w * h) / AUTO_MAX_CELLS)) : parseFloat(el.resolution.value);
+        cell = Math.max(cell, Math.sqrt((w * h) / HARD_MAX_CELLS));
+        const nx = Math.ceil(w / cell), ny = Math.ceil(h / cell);
+        return {
+          xmin, ymax, xmax: xmin + nx * cell, ymin: ymax - ny * cell, nx, ny, cell, k,
+          key: [terrainId, xmin.toFixed(2), ymax.toFixed(2), nx, ny, cell.toFixed(5)].join("|")
+        };
+      }
+      const rowCol = (g, x, y) => [Math.floor((g.ymax - y) / g.cell), Math.floor((x - g.xmin) / g.cell)];
+      const cellAt = (g, x, y) => {
+        const [r, c] = rowCol(g, x, y);
+        return r < 0 || c < 0 || r >= g.ny || c >= g.nx ? -1 : r * g.nx + c;
+      };
+
+      // The dam axis as a 4-connected line of cells the water cannot enter. Where
+      // the line steps diagonally, an extra cell closes the corner.
+      function rasteriseAxis(paths, g) {
+        const barrier = new Uint8Array(g.nx * g.ny);
+        const mark = (r, c) => { if (r >= 0 && c >= 0 && r < g.ny && c < g.nx) barrier[r * g.nx + c] = 1; };
+        forEachSegment(paths, (ax, ay, bx, by) => {
+          const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / (g.cell * 0.2)));
+          let prev = null;
+          for (let s = 0; s <= steps; s++) {
+            const [r, c] = rowCol(g, ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps);
+            if (prev && prev[0] !== r && prev[1] !== c) mark(prev[0], c);
+            mark(r, c);
+            prev = [r, c];
+          }
+        });
+        return barrier;
+      }
+
+      // Start cell on side `sign` (+1 = left of the drawn line), next to the axis's lowest point.
+      function startCell(low, sign, g, barrier) {
+        const [nx, ny] = [-low.dir[1], low.dir[0]];   // left normal
+        for (const cells of [3, 5, 8, 12]) {
+          const i = cellAt(g, low.x + sign * nx * cells * g.cell, low.y + sign * ny * cells * g.cell);
+          if (i >= 0 && !barrier[i]) return i;
+        }
+        return -1;
+      }
+
+      // Cells three cells across the dam from side `sign`. Water from that side
+      // reaching any of them has flowed around the dam.
+      function crossCells(paths, sign, g, barrier) {
+        const out = [];
+        forEachSegment(paths, (ax, ay, bx, by) => {
+          const len = Math.hypot(bx - ax, by - ay);
+          const dx = (sign * (by - ay) / len) * g.cell * 3, dy = (-sign * (bx - ax) / len) * g.cell * 3;
+          const steps = Math.max(1, Math.ceil(len / g.cell));
+          for (let s = 0; s <= steps; s++) {
+            const i = cellAt(g, ax + ((bx - ax) * s) / steps + dx, ay + ((by - ay) * s) / steps + dy);
+            if (i >= 0 && !barrier[i]) out.push(i);
+          }
+        });
+        return Int32Array.from(out);
+      }
+
+      // Elevation at every cell centre. Loaded in horizontal strips, three at a
+      // time, each with its own sampler, so progress follows the tile downloads
+      // (the slow part at fine resolutions). Returns null if superseded.
+      async function loadElevationGrid(g, signal, stale, onProgress) {
+        const rowsPerStrip = Math.max(32, Math.min(256, Math.ceil(g.ny / 24)));
+        const strips = [];
+        for (let r0 = 0; r0 < g.ny; r0 += rowsPerStrip) strips.push([r0, Math.min(g.ny, r0 + rowsPerStrip)]);
+        const elev = new Float32Array(g.nx * g.ny);
+        let next = 0, loaded = 0, rowsDone = 0;
+        const report = () => onProgress(0.5 * (loaded / strips.length) + 0.5 * (rowsDone / g.ny),
+          `strip ${Math.min(loaded + 1, strips.length)} of ${strips.length}`);
+        report();
+
+        const loadStrips = async () => {
+          while (next < strips.length && !stale()) {
+            const [r0, r1] = strips[next++];
+            const sampler = await elevationLayer.createElevationSampler(new Extent({
+              xmin: g.xmin - g.cell, xmax: g.xmax + g.cell,
+              ymin: g.ymax - (r1 + 1) * g.cell, ymax: g.ymax - (r0 - 1) * g.cell,
+              spatialReference: WM
+            }), { demResolution: g.cell, noDataValue: NODATA, signal });
+            if (stale()) return;
+            loaded++;
+            const at = typeof sampler.elevationAt === "function"
+              ? (x, y) => sampler.elevationAt(x, y)
+              : (x, y) => sampler.queryElevation(new Point({ x, y, spatialReference: WM })).z;
+            let t0 = performance.now();
+            for (let r = r0; r < r1; r++) {
+              const y = g.ymax - (r + 0.5) * g.cell;
+              for (let c = 0, i = r * g.nx; c < g.nx; c++, i++) {
+                const z = at(g.xmin + (c + 0.5) * g.cell, y);
+                elev[i] = Number.isFinite(z) ? z : NODATA;
+              }
+              rowsDone++;
+              if (performance.now() - t0 > 50) {   // yield so the page stays responsive
+                report();
+                await new Promise((ok) => setTimeout(ok, 0));
+                if (stale()) return;
+                t0 = performance.now();
+              }
+            }
+            report();
+          }
+        };
+        await Promise.all([loadStrips(), loadStrips(), loadStrips()]);
+        return stale() ? null : elev;
+      }
+
+      // ------------------------------------------------------------------ water level
+      // Requests are coalesced: while one trace runs, only the newest level waits.
+      // Traces of an older fill (version mismatch) are ignored.
+      let traceBusy = false, traceNext = null;
+      async function showLevel(level) {
+        traceNext = level;
+        if (traceBusy) return;
+        traceBusy = true;
+        try {
+          while (traceNext !== null) {
+            const L = traceNext;
+            traceNext = null;
+            const t = await callWorker({ type: "trace", level: L });
+            if (!result || t.version !== result.version) continue;
+            lastTrace = t;
+            drawWater(t);
+            showLevelStats(t);
+          }
+        } catch (err) {
+          setStatus(err.message, "error");
+        } finally {
+          traceBusy = false;
+        }
+      }
+
+      function drawWater(t) {
+        waterLayer.removeAll();
+        if (!t.rings.length) return;
+        let surface = new Polygon({
+          rings: t.rings.map((flat) => Array.from({ length: flat.length / 2 }, (_, i) => [flat[2 * i], flat[2 * i + 1]])),
+          spatialReference: WM
+        });
+        try { surface = differenceOperator.execute(surface, result.cut); }   // cut at the wall's upstream face
+        catch (err) { console.warn("Cutting the water at the dam failed; showing it uncut.", err); }
+        if (!surface || !surface.rings || !surface.rings.length) return;
+        waterLayer.add(new Graphic({
+          geometry: new Polygon({ rings: surface.rings.map((ring) => ring.map(([x, y]) => [x, y, t.level])), hasZ: true, spatialReference: WM }),
+          symbol: QUALITY[qualityPref].animatedWater ? symbols.water : symbols.flatWater
+        }));
+      }
+
+      // ------------------------------------------------------------------ map graphics
+      // The wall is a path extruded from just below the riverbed to the crest; the
+      // terrain hides the parts below ground.
+      function drawWall() {
+        wallLayer.removeAll();
+        const base = wall.bed - 2;
+        wallLayer.add(new Graphic({
+          geometry: new Polyline({ paths: wall.paths.map((p) => p.map(([x, y]) => [x, y, base])), hasZ: true, spatialReference: WM }),
+          symbol: {
+            type: "line-3d",
+            symbolLayers: [{
+              type: "path", profile: "quad", anchor: "bottom", join: "miter", cap: "butt", profileRotation: "heading",
+              width: num(el.width, 12, 1, 200), height: wall.crest - base, material: { color: [206, 204, 196] }
+            }]
+          }
+        }));
+      }
+
+      // Analysis-area outline (dashed) and, in red, where the water leaves it.
+      function drawAnalysis(r) {
+        analysisLayer.removeAll();
+        const g = r.grid;
+        analysisLayer.add(new Graphic({
+          geometry: new Polyline({
+            paths: [[[g.xmin, g.ymin], [g.xmin, g.ymax], [g.xmax, g.ymax], [g.xmax, g.ymin], [g.xmin, g.ymin]]],
+            spatialReference: WM
+          }),
+          symbol: symbols.boundary
+        }));
+        if (r.edgeRuns.length && !r.leak) {
+          analysisLayer.add(new Graphic({
+            geometry: new Polyline({ paths: r.edgeRuns.map(([x1, y1, x2, y2]) => [[x1, y1], [x2, y2]]), spatialReference: WM }),
+            symbol: symbols.exit
+          }));
+        }
+      }
+
+      // Area removed from the water surface: from the wall's upstream face to a few
+      // cells downstream of the axis. It cuts the water exactly at the wall (no cells
+      // poking through, no overlap with the crest) whatever the grid resolution.
+      function damCut(r) {
+        const halfWall = num(el.width, 12, 1, 200) / 2 / r.grid.k;   // metres on the ground -> map units
+        return offsetBand(r.paths, r.side, halfWall, Math.max(r.grid.cell * 3, halfWall), r.grid.cell * 2);
+      }
+
+      // Band along `paths` from `up` map units on the reservoir side (`sign`) to `down`
+      // on the other side, extended by `ext` at both ends. Corners use capped miters.
+      function offsetBand(paths, sign, up, down, ext) {
+        const rings = paths.map((p) => {
+          const u0 = unit(p[0], p[1]), un = unit(p[p.length - 2], p[p.length - 1]);
+          const pts = [[p[0][0] - u0[0] * ext, p[0][1] - u0[1] * ext], ...p,
+                       [p[p.length - 1][0] + un[0] * ext, p[p.length - 1][1] + un[1] * ext]];
+          const normals = [];   // per segment, pointing away from the reservoir
+          for (let i = 1; i < pts.length; i++) {
+            const u = unit(pts[i - 1], pts[i]);
+            normals.push([sign * u[1], -sign * u[0]]);
+          }
+          const miter = pts.map((q, i) => {
+            if (i === 0) return normals[0];
+            if (i === pts.length - 1) return normals[normals.length - 1];
+            const a = normals[i - 1], b = normals[i], mx = a[0] + b[0], my = a[1] + b[1], ml = Math.hypot(mx, my);
+            if (ml < 1e-9) return b;
+            const s = 1 / Math.max(0.35, (mx * b[0] + my * b[1]) / ml);
+            return [(mx / ml) * s, (my / ml) * s];
+          });
+          const ring = [
+            ...pts.map((q, i) => [q[0] - miter[i][0] * up, q[1] - miter[i][1] * up]),
+            ...pts.map((q, i) => [q[0] + miter[i][0] * down, q[1] + miter[i][1] * down]).reverse()
+          ];
+          ring.push(ring[0]);
+          return signedArea(ring) > 0 ? ring.reverse() : ring;   // clockwise = outer ring
+        });
+        return new Polygon({ rings, spatialReference: WM });
+      }
+
+      // ------------------------------------------------------------------ results panel
+      const VERDICT_ICONS = { ok: "#i-ok", warn: "#i-warn", bad: "#i-bad" };
+      function showResults(r) {
+        el.results.hidden = false;
+        el.flip.disabled = false;
+        el.sideTip.dataset.tip = (sideOverride === null ? "Reservoir side found automatically." : "Reservoir side set with Flip side.") +
+          " Click the axis on the map to reshape it.";
+
+        // Is the result complete and trustworthy?
+        let cls, title, text;
+        if (r.drains) {
+          cls = "bad"; title = "Wrong side, no reservoir";
+          text = `Water on this side leaves the analysis area at ${r.escape.toFixed(1)} m without rising, so this is the downstream valley. Use Flip side.`;
+        } else if (r.leak) {
+          cls = "bad"; title = "Water flows around the dam";
+          text = `Extend the axis at both ends onto ground higher than the crest (${r.crest.toFixed(1)} m), or lower the dam.`;
+        } else if (r.truncated) {
+          cls = "warn"; title = "Incomplete: search limit reached";
+          text = `The water still reaches the ${r.maxKm} km limit (red line on the map), so area and volume are minimums. Raise Max distance in Analysis settings.`;
+        } else {
+          cls = "ok"; title = "Complete";
+          text = `The reservoir closes within ${r.reachKm} km of the dam (dashed outline on the map).`;
+        }
+        $("verdict").className = "msg " + cls;
+        $("verdictIcon").querySelector("use").setAttribute("href", VERDICT_ICONS[cls]);
+        $("verdictTitle").textContent = title;
+        $("verdictText").textContent = text;
+        // A complete result shows only its title (details in the "i"); warnings keep
+        // their text visible because it says what to do.
+        $("verdictText").hidden = cls === "ok";
+        $("verdictInfo").hidden = cls !== "ok";
+        $("verdictInfo").dataset.tip = text;
+
+        el.heightTip.dataset.tip = r.maxHeight >= 1
+          ? (r.heightIsAuto ? `Started at half of the ${r.maxHeight} m this axis can hold.` : `This axis can hold a dam up to ${r.maxHeight} m high.`)
+          : "Height is measured from the lowest ground on the axis to the crest.";
+        setFigure($("sCrest"), `${r.crest.toFixed(1)} m`, "small");
+        setFigure($("sBed"), `${r.bed.toFixed(1)} m`, "small");
+        setFigure($("sLength"), `${Math.round(r.lengthM)} m`, "small");
+
+        const lo = Math.floor(r.minElev * 10) / 10;
+        el.level.min = lo;
+        el.level.max = r.crest.toFixed(2);
+        el.level.step = Math.max(0.05, (r.crest - lo) / 400).toFixed(2);
+        el.level.value = r.crest.toFixed(2);
+
+        const groundM = r.grid.cell * r.grid.k;
+        el.resultTip.dataset.tip = `Calculated from ${TERRAINS[terrainId].label} on a ${r.grid.nx.toLocaleString()} × ${r.grid.ny.toLocaleString()} ` +
+          `grid with ~${groundM.toFixed(1)} m cells.` +
+          (groundM > 6 ? " For sharper shorelines, lower the search distance or choose a finer grid in Analysis settings." : "");
+
+        const notes = [];
+        [["start", r.startZ], ["end", r.endZ]].forEach(([which, z]) => {
+          if (z > NODATA + 1 && z < r.crest - 0.05) {
+            notes.push(`The ${which} of the dam axis is ${(r.crest - z).toFixed(1)} m below the crest. Extend it onto higher ground.`);
+          }
+        });
+        el.notes.innerHTML = notes.map((t) => `<li class="msg bad"><svg class="ic"><use href="#i-bad"/></svg><span>${t}</span></li>`).join("");
+      }
+
+      function showLevelStats(t) {
+        const minimum = t.atEdge && !result.leak && !result.drains;   // water reaches the area edge at this level
+        const pre = minimum ? "≥ " : "";
+        $("levelLabel").textContent = `${t.level.toFixed(1)} m`;
+        setFigure($("sVolume"), pre + fmtVolume(t.volume));
+        setFigure($("sArea"), pre + fmtArea(t.area));
+        $("sArea").className = $("sVolume").className = minimum ? "min" : "";
+        setFigure($("sDepth"), `${Math.max(0, t.level - result.minElev).toFixed(1)} m`);
+        $("levelNote").innerHTML = minimum
+          ? `<div class="msg warn"><svg class="ic"><use href="#i-warn"/></svg><span>At this level the water reaches the edge of the analysis area, so these values are minimums.</span></div>`
+          : "";
+        chartLevel = t.level;
+        requestChart();
+      }
+
+      // "38.62 mil. m³" -> number as text, unit in a smaller element
+      function setFigure(target, text, unitTag = "span") {
+        const m = /^(≥ )?([\d.,\s]+?)\s+(\D.*)$/.exec(text);
+        target.textContent = m ? (m[1] || "") + m[2] : text;
+        if (!m) return;
+        const unit = document.createElement(unitTag);
+        unit.className = "u";
+        unit.textContent = m[3];
+        target.append(unit);
+      }
+      const fmtArea = (m2) => (m2 >= 1e6 ? `${(m2 / 1e6).toFixed(2)} km²` : `${(m2 / 1e4).toFixed(1)} ha`);
+      const fmtVolume = (m3) => (m3 >= 1e6 ? `${(m3 / 1e6).toFixed(2)} mil. m³` : `${Math.round(m3 / 1000).toLocaleString()} thous. m³`);
+
+      // ------------------------------------------------------------------ reservoir curves chart
+      // Volume and flooded area against water level, both as % of their value at the
+      // crest, so the two curves share one honest scale. Drag to set the level,
+      // hover to read values. Redraws are batched to one per animation frame.
+      let chartLevel = null, hoverLevel = null, dragging = false, chartFrame = 0, chartBox = null;
+      function requestChart() {
+        if (!chartFrame) chartFrame = requestAnimationFrame(() => { chartFrame = 0; drawChart(); });
+      }
+
+      function drawChart() {
+        if (!result) return;
+        const cv = el.chart, ctx = cv.getContext("2d"), C = chartColors;
+        const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+        if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+          cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        const { levels, volume, area } = result.curve;
+        const vMax = volume[volume.length - 1] || 1, aMax = area[area.length - 1] || 1;
+        const pre = result.truncated ? "≥ " : "";
+        $("legendVolume").textContent = `(100 % = ${pre}${fmtVolume(vMax)})`;
+        $("legendArea").textContent = `(100 % = ${pre}${fmtArea(aMax)})`;
+
+        const pad = { l: 34, r: 10, t: 6, b: 28 }, pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+        const yMin = levels[0], yMax = levels[levels.length - 1];
+        const clampL = (L) => Math.min(Math.max(L, yMin), yMax);
+        const X = (pct) => pad.l + (pct / 100) * pw;
+        const Y = (L) => pad.t + ph - ((L - yMin) / (yMax - yMin || 1)) * ph;
+        chartBox = { top: pad.t, ph, yMin, yMax };
+        ctx.font = "11px Barlow, sans-serif";
+        ctx.lineWidth = 1;
+
+        // the plot fills with water up to the current level, like a gauge
+        if (chartLevel != null) {
+          const yw = Y(clampL(chartLevel));
+          ctx.fillStyle = C.fill;
+          ctx.fillRect(pad.l, yw, pw, pad.t + ph - yw);
+        }
+
+        // grid and axes
+        const yTicks = niceTicks(yMin, yMax, 4);
+        const yDecimals = yTicks.length > 1 && yTicks[1] - yTicks[0] < 1 ? 1 : 0;
+        ctx.strokeStyle = C.grid;
+        ctx.beginPath();
+        yTicks.forEach((t) => { ctx.moveTo(pad.l, Y(t)); ctx.lineTo(pad.l + pw, Y(t)); });
+        [0, 25, 50, 75, 100].forEach((p) => { ctx.moveTo(X(p), pad.t); ctx.lineTo(X(p), pad.t + ph); });
+        ctx.stroke();
+        ctx.fillStyle = C.ink;
+        ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        yTicks.forEach((t) => ctx.fillText(t.toFixed(yDecimals), pad.l - 5, Y(t)));
+        ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+        [0, 50, 100].forEach((p) => ctx.fillText(p + " %", X(p), pad.t + ph + 12));
+        ctx.fillText("% of value at crest", pad.l + pw / 2, h - 2);
+        ctx.save(); ctx.translate(9, pad.t + ph / 2); ctx.rotate(-Math.PI / 2);
+        ctx.fillText("Water level (m)", 0, 0);
+        ctx.restore();
+
+        // curves: area is dashed as well as green, so they never rely on colour alone
+        const series = [[area, aMax, C.area, [6, 4]], [volume, vMax, C.volume, []]];
+        ctx.lineWidth = 2; ctx.lineJoin = "round";
+        series.forEach(([vals, max, color, dash]) => {
+          ctx.beginPath(); ctx.strokeStyle = color; ctx.setLineDash(dash);
+          vals.forEach((v, i) => ctx[i ? "lineTo" : "moveTo"](X((100 * v) / max), Y(levels[i])));
+          ctx.stroke();
+        });
+
+        // level markers: solid = current level, dashed = cursor
+        const marker = (L, color, dashed) => {
+          const y = Y(L);
+          ctx.strokeStyle = color; ctx.lineWidth = dashed ? 1.5 : 2; ctx.setLineDash(dashed ? [4, 3] : []);
+          ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + pw, y); ctx.stroke();
+          ctx.setLineDash([]); ctx.lineWidth = 2; ctx.strokeStyle = C.surface;
+          series.forEach(([vals, max, col]) => {
+            ctx.beginPath(); ctx.arc(X((100 * curveAt(vals, L)) / max), y, 4, 0, 2 * Math.PI);
+            ctx.fillStyle = col; ctx.fill(); ctx.stroke();
+          });
+        };
+        if (chartLevel != null) marker(clampL(chartLevel), C.level, false);
+        const hovering = hoverLevel != null && !dragging;
+        if (hovering) marker(hoverLevel, C.ink, true);
+        ctx.setLineDash([]);
+
+        // readout under the chart: fixed cells, so nothing shifts while hovering
+        const L = hovering ? hoverLevel : chartLevel;
+        if (L == null) return;
+        $("probe").classList.toggle("hover", hovering);
+        $("probeMode").textContent = hovering ? "At cursor" : "Current level";
+        setFigure($("probeLevel"), `${L.toFixed(1)} m`, "small");
+        setFigure($("probeVol"), pre + fmtVolume(curveAt(volume, L)), "small");
+        setFigure($("probeArea"), pre + fmtArea(curveAt(area, L)), "small");
+      }
+
+      // Linear interpolation of a curve (sampled at result.curve.levels) at level L.
+      function curveAt(vals, L) {
+        const lv = result.curve.levels, n = lv.length - 1;
+        if (n < 1) return vals[0];
+        const t = Math.max(0, Math.min(n, ((L - lv[0]) / (lv[n] - lv[0] || 1)) * n));
+        const i = Math.min(n - 1, Math.floor(t));
+        return vals[i] + (vals[i + 1] - vals[i]) * (t - i);
+      }
+      // About n round tick values between a and b (steps of 1, 2 or 5 × 10^k).
+      function niceTicks(a, b, n) {
+        const raw = (b - a || 1) / n, p = Math.pow(10, Math.floor(Math.log10(raw)));
+        const step = [1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw);
+        const out = [], t0 = Math.ceil(a / step) * step;
+        for (let i = 0; t0 + i * step <= b + 1e-9; i++) out.push(+(t0 + i * step).toFixed(6));
+        return out;
+      }
+
+      const levelAt = (e) => {
+        if (!chartBox || !result) return null;
+        const f = 1 - (e.clientY - el.chart.getBoundingClientRect().top - chartBox.top) / chartBox.ph;
+        return Math.min(chartBox.yMax, Math.max(chartBox.yMin, chartBox.yMin + f * (chartBox.yMax - chartBox.yMin)));
+      };
+      const setLevelFromPointer = (e) => {
+        const L = levelAt(e);
+        if (L == null) return;
+        el.level.value = L.toFixed(2);
+        showLevel(parseFloat(el.level.value));
+      };
+      el.chart.addEventListener("pointerdown", (e) => {
+        if (!result) return;
+        dragging = true;
+        el.chart.setPointerCapture(e.pointerId);
+        setLevelFromPointer(e);
+      });
+      el.chart.addEventListener("pointermove", (e) => {
+        if (dragging) setLevelFromPointer(e);
+        else { hoverLevel = levelAt(e); requestChart(); }
+      });
+      const endDrag = () => { dragging = false; requestChart(); };
+      el.chart.addEventListener("pointerup", endDrag);
+      el.chart.addEventListener("pointercancel", endDrag);
+      el.chart.addEventListener("pointerleave", () => { if (!dragging) { hoverLevel = null; requestChart(); } });
+
+      // ------------------------------------------------------------------ geometry helpers
+      const toWebMercator = (geom) => (geom.spatialReference.isWebMercator ? geom : webMercatorUtils.geographicToWebMercator(geom));
+      const mercatorScale = (y) => Math.cos(Math.atan(Math.sinh(y / EARTH_RADIUS)));   // ground metres per map unit
+      const unit = (a, b) => {
+        const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+        return [dx / l, dy / l];
+      };
+      const signedArea = (ring) => {
+        let a = 0;
+        for (let i = 0; i < ring.length - 1; i++) a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+        return a / 2;
+      };
+
+      // 2D coordinates, consecutive duplicates removed, paths with fewer than 2 points dropped.
+      function cleanPaths(paths) {
+        return paths.map((p) => p.reduce((out, [x, y]) => {
+          const last = out[out.length - 1];
+          if (!last || Math.hypot(x - last[0], y - last[1]) > 1e-6) out.push([x, y]);
+          return out;
+        }, [])).filter((p) => p.length >= 2);
+      }
+
+      // Insert points so no segment is longer than maxSeg map units.
+      function densify(paths, maxSeg) {
+        return paths.map((p) => {
+          const out = [p[0]];
+          forEachSegment([p], (ax, ay, bx, by) => {
+            const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / maxSeg));
+            for (let s = 1; s <= n; s++) out.push([ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n]);
+          });
+          return out;
+        });
+      }
+
+      function forEachSegment(paths, fn) {
+        paths.forEach((p) => { for (let i = 1; i < p.length; i++) fn(p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]); });
+      }
+
+      function pathLength(paths) {
+        let total = 0;
+        forEachSegment(paths, (ax, ay, bx, by) => { total += Math.hypot(bx - ax, by - ay); });
+        return total;
+      }
+
+      // Unit direction of the dam segment nearest to (x, y).
+      function segmentDirAt(paths, x, y) {
+        let best = Infinity, dir = [1, 0];
+        forEachSegment(paths, (ax, ay, bx, by) => {
+          const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+          const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
+          const d = Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
+          if (d < best) { best = d; dir = unit([ax, ay], [bx, by]); }
+        });
+        return dir;
+      }
+
+      // ------------------------------------------------------------------ reset
+      // Remove the calculated result (wall, water, outline, panel) but keep the axis.
+      function clearResults() {
+        runId++;
+        if (activeAbort) { activeAbort.abort(); activeAbort = null; }
+        wallLayer.removeAll(); waterLayer.removeAll(); analysisLayer.removeAll();
+        result = null; wall = null; lastTrace = null;
+        chartLevel = hoverLevel = null;
+        progress.hide();
+        el.flip.disabled = true;
+        el.results.hidden = true;
+        ["sCrest", "sBed", "sLength", "probeLevel", "probeVol", "probeArea"].forEach((id) => { $(id).textContent = "–"; });
+        el.sideTip.dataset.tip = "Click the axis on the map to reshape it.";
+      }
+
+      // Remove everything, including the axis.
+      function clearAll() {
+        sketch.cancel();
+        clearResults();
+        clearStatus();
+        sketchLayer.removeAll();
+        damGraphic = null; sideOverride = null;
+        setDrawing(false);
+        showDamControls(false);
+        el.heightTip.dataset.tip = "Height is measured from the lowest ground on the axis to the crest.";
+      }
+    });
+  </script>
+  <script>
+    // ------------------------------------------------------------------ tooltips
+    // Any element with data-tip shows it on hover, on keyboard focus, and on tap.
+    // The tooltip lives on <body> with fixed positioning, so the panel never clips it.
+    (function () {
+      const tip = document.getElementById("tooltip");
+      let owner = null;
+      function show(el) {
+        const text = el.dataset.tip;
+        if (!text) return;
+        owner = el;
+        tip.textContent = text;
+        tip.hidden = false;
+        el.setAttribute("aria-describedby", "tooltip");
+        const r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+        const left = Math.min(Math.max(8, r.left + r.width / 2 - tw / 2), window.innerWidth - tw - 8);
+        let top = r.bottom + 8;
+        if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+        tip.style.left = left + "px";
+        tip.style.top = top + "px";
+      }
+      function hide() {
+        tip.hidden = true;
+        if (owner) owner.removeAttribute("aria-describedby");
+        owner = null;
+      }
+      document.addEventListener("pointerover", (e) => {
+        const el = e.target.closest("[data-tip]");
+        if (el && e.pointerType !== "touch") show(el);
+      });
+      document.addEventListener("pointerout", (e) => {
+        const el = e.target.closest("[data-tip]");
+        if (el && !el.contains(e.relatedTarget)) hide();
+      });
+      document.addEventListener("focusin", (e) => {
+        const el = e.target.closest("[data-tip]");
+        if (el && el.matches(":focus-visible")) show(el);
+      });
+      document.addEventListener("focusout", hide);
+      document.addEventListener("click", (e) => {     // tap on touch screens
+        const el = e.target.closest(".info[data-tip]");
+        if (!el) { hide(); return; }
+        owner === el && !tip.hidden ? hide() : show(el);
+      });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+      document.addEventListener("scroll", hide, true);
+    })();
+
+    // ------------------------------------------------------------------ hide / show the panel
+    (function () {
+      const panel = document.getElementById("panel");
+      const btnHide = document.getElementById("btnHide"), btnShow = document.getElementById("btnShow");
+      btnHide.addEventListener("click", () => {
+        document.body.classList.add("panel-hidden");
+        panel.inert = true;
+        btnShow.hidden = false;
+        btnShow.focus();
+      });
+      btnShow.addEventListener("click", () => {
+        document.body.classList.remove("panel-hidden");
+        panel.inert = false;
+        btnShow.hidden = true;
+        btnHide.focus();
+      });
+    })();
+  </script>
+</body>
+</html>
