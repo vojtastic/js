@@ -1,0 +1,1680 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>Praha 3D – Dejvice</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- ArcGIS Maps SDK for JavaScript (includes map components) -->
+    <script type="module" src="https://js.arcgis.com/5.1/"></script>
+
+    <style>
+      :root {
+        --mist: rgba(240, 243, 241, 0.86); /* frosted panel */
+        --mist-solid: #eef1ef;
+        --paper: #ffffff;
+        --ink: #1c2a33; /* deep slate text */
+        --ink-soft: #55656f;
+        --rule: rgba(28, 42, 51, 0.12);
+        --forest: #1f7a5c; /* accent: forest green of topographic maps */
+        --forest-ink: #155a43;
+        --forest-wash: rgba(31, 122, 92, 0.1);
+        --danger: #b42318;
+        --warn: #8a5a00;
+
+        --radius-panel: 16px;
+        --radius-control: 9px;
+        --shadow: 0 18px 40px -18px rgba(18, 32, 40, 0.45), 0 2px 6px rgba(18, 32, 40, 0.12);
+
+        --calcite-font-family: "Instrument Sans", system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: "Instrument Sans", system-ui, sans-serif;
+        font-size: 14px;
+        color: var(--ink);
+        background: var(--mist-solid);
+      }
+
+      #scene {
+        position: absolute;
+        inset: 0;
+      }
+
+      /* ---------- shared panel surface ---------- */
+      .surface {
+        position: absolute;
+        z-index: 5;
+        background: var(--mist);
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: var(--radius-panel);
+        box-shadow: var(--shadow);
+      }
+
+      /* ---------- sidebar ---------- */
+      #sidebar {
+        top: 14px;
+        left: 14px;
+        width: 348px;
+        max-width: calc(100vw - 28px);
+        max-height: calc(100% - 28px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .brand {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 16px 14px 18px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.1;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .brand .place {
+        margin: 3px 0 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+      }
+
+      .readout {
+        margin: 10px 0 0;
+        display: grid;
+        grid-template-columns: repeat(3, auto);
+        justify-content: start;
+        column-gap: 16px;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-soft);
+      }
+
+      .readout b {
+        display: block;
+        color: var(--ink);
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      .icon-btn {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border: 1px solid var(--rule);
+        border-radius: 50%;
+        background: var(--paper);
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      .icon-btn:hover {
+        border-color: var(--ink-soft);
+      }
+
+      .icon-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      #sidebar.collapsed .sidebar-body {
+        display: none;
+      }
+
+      #sidebar.collapsed #collapseBtn svg {
+        transform: rotate(180deg);
+      }
+
+      .sidebar-body {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-top: 1px solid var(--rule);
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        margin: 12px 14px 0;
+        padding: 4px;
+        background: rgba(28, 42, 51, 0.06);
+        border-radius: 999px;
+      }
+
+      .tabs button {
+        padding: 7px 10px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--ink-soft);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .tabs button[aria-selected="true"] {
+        background: var(--paper);
+        color: var(--ink);
+        box-shadow: 0 1px 3px rgba(18, 32, 40, 0.15);
+      }
+
+      .count {
+        display: inline-block;
+        min-width: 20px;
+        margin-left: 4px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: var(--forest);
+        color: #fff;
+        font-size: 11px;
+        line-height: 18px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .count:empty {
+        display: none;
+      }
+
+      .tab-panel {
+        overflow-y: auto;
+        padding: 14px 18px 18px;
+      }
+
+      .tab-panel[hidden] {
+        display: none;
+      }
+
+      h2 {
+        margin: 4px 0 4px;
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .lede {
+        margin: 0 0 14px;
+        color: var(--ink-soft);
+        line-height: 1.45;
+      }
+
+      /* ---------- form controls ---------- */
+      .field {
+        display: block;
+        margin-bottom: 12px;
+      }
+
+      .field > .label {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 5px;
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      .field > .label small {
+        font-weight: 400;
+        color: var(--ink-soft);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .hint {
+        display: block;
+        margin-top: 4px;
+        color: var(--ink-soft);
+        font-size: 12px;
+      }
+
+      input[type="text"],
+      input[type="url"],
+      input[type="number"],
+      select {
+        width: 100%;
+        padding: 8px 10px;
+        font: inherit;
+        color: var(--ink);
+        background: var(--paper);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-control);
+      }
+
+      input[type="number"] {
+        font-variant-numeric: tabular-nums;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--forest);
+      }
+
+      input[type="checkbox"] {
+        accent-color: var(--forest);
+        width: 16px;
+        height: 16px;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--forest);
+        outline-offset: 2px;
+      }
+
+      /* file picker shown as a drop slot */
+      .file-slot {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1.5px dashed rgba(28, 42, 51, 0.25);
+        border-radius: var(--radius-control);
+        background: rgba(255, 255, 255, 0.55);
+        cursor: pointer;
+      }
+
+      .file-slot:hover,
+      .file-slot:focus-within {
+        border-color: var(--forest);
+      }
+
+      .file-slot.filled {
+        border-style: solid;
+        border-color: var(--forest);
+        background: var(--forest-wash);
+      }
+
+      .file-slot input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+
+      .file-slot .ext {
+        flex: none;
+        padding: 3px 7px;
+        border-radius: 6px;
+        background: var(--ink);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .file-slot .file-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--ink-soft);
+      }
+
+      .file-slot.filled .file-name {
+        color: var(--ink);
+        font-weight: 500;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 9px 14px;
+        font: inherit;
+        font-weight: 600;
+        border-radius: var(--radius-control);
+        border: 1px solid var(--forest);
+        background: var(--forest);
+        color: #fff;
+        cursor: pointer;
+      }
+
+      .btn:hover:not(:disabled) {
+        background: var(--forest-ink);
+      }
+
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .btn.block {
+        width: 100%;
+      }
+
+      .btn.quiet {
+        background: var(--paper);
+        border-color: var(--rule);
+        color: var(--ink);
+      }
+
+      .btn.quiet:hover:not(:disabled) {
+        background: var(--paper);
+        border-color: var(--ink-soft);
+      }
+
+      .btn.danger {
+        color: var(--danger);
+      }
+
+      .segmented {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 1fr;
+        gap: 3px;
+        padding: 3px;
+        background: rgba(28, 42, 51, 0.06);
+        border-radius: var(--radius-control);
+      }
+
+      .segmented button {
+        padding: 6px 4px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--ink-soft);
+        font: inherit;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .segmented button[aria-pressed="true"] {
+        background: var(--paper);
+        color: var(--ink);
+        box-shadow: 0 1px 3px rgba(18, 32, 40, 0.15);
+      }
+
+      .segmented button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr 86px;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .status {
+        margin: 10px 0 0;
+        line-height: 1.45;
+        font-size: 13px;
+      }
+
+      .status:empty {
+        display: none;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .status.warning {
+        color: var(--warn);
+      }
+
+      .status.ok {
+        color: var(--forest-ink);
+      }
+
+      details.add-vehicle {
+        margin-bottom: 16px;
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.5);
+      }
+
+      details.add-vehicle summary {
+        padding: 11px 14px;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      details.add-vehicle summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details.add-vehicle summary::before {
+        content: "+";
+        display: inline-block;
+        width: 18px;
+        color: var(--forest);
+        font-weight: 700;
+      }
+
+      details.add-vehicle[open] summary::before {
+        content: "–";
+      }
+
+      details.add-vehicle .inner {
+        padding: 0 14px 14px;
+      }
+
+      /* ---------- vehicle list ---------- */
+      .list-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 0 0 8px;
+      }
+
+      .list-head h2 {
+        margin: 0;
+      }
+
+      .vehicles {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+
+      .vehicle {
+        display: grid;
+        grid-template-columns: 40px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 8px 7px 7px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.6);
+        cursor: pointer;
+      }
+
+      .vehicle:hover {
+        border-color: var(--rule);
+      }
+
+      .vehicle[aria-selected="true"] {
+        border-color: var(--forest);
+        background: var(--paper);
+      }
+
+      .vehicle svg.thumb {
+        width: 40px;
+        height: 40px;
+        border-radius: 9px;
+        background: var(--mist-solid);
+      }
+
+      .vehicle .name {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .vehicle .meta {
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .empty {
+        padding: 18px 14px;
+        border: 1.5px dashed rgba(28, 42, 51, 0.2);
+        border-radius: 12px;
+        color: var(--ink-soft);
+        text-align: center;
+        line-height: 1.45;
+      }
+
+      .editor {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--rule);
+      }
+
+      .editor[hidden] {
+        display: none;
+      }
+
+      .editor-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .swatch {
+        flex: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+
+      .editor-title input {
+        font-weight: 600;
+      }
+
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 14px;
+        cursor: pointer;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      /* ---------- layer list card ---------- */
+      #layersCard {
+        top: 14px;
+        right: 14px;
+        width: 300px;
+        max-width: calc(100vw - 28px);
+        max-height: calc(100% - 200px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      #layersCard header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 12px 10px 16px;
+      }
+
+      #layersCard header h2 {
+        margin: 0;
+      }
+
+      #layersCard .layers-body {
+        overflow-y: auto;
+        border-top: 1px solid var(--rule);
+      }
+
+      #layersCard.collapsed .layers-body {
+        display: none;
+      }
+
+      #layersCard.collapsed #layersToggle svg {
+        transform: rotate(180deg);
+      }
+
+      #layersCard .layers-empty {
+        margin: 0;
+        padding: 12px 16px 14px;
+        color: var(--ink-soft);
+        line-height: 1.45;
+      }
+
+      arcgis-layer-list {
+        --calcite-color-foreground-1: transparent;
+        --calcite-color-background: transparent;
+      }
+
+      /* ---------- toast ---------- */
+      #message {
+        position: absolute;
+        z-index: 10;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: min(560px, calc(100% - 32px));
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: var(--ink);
+        color: #fff;
+        line-height: 1.45;
+        box-shadow: var(--shadow);
+      }
+
+      #message[hidden] {
+        display: none;
+      }
+
+      @media (max-width: 760px) {
+        #layersCard {
+          top: auto;
+          bottom: 14px;
+          right: 14px;
+          left: 14px;
+          width: auto;
+          max-height: 40%;
+        }
+
+        #sidebar {
+          max-height: calc(60% - 28px);
+        }
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .icon-btn svg {
+          transition: transform 0.2s ease;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <arcgis-scene id="scene">
+      <arcgis-zoom slot="bottom-right"></arcgis-zoom>
+      <arcgis-home slot="bottom-right"></arcgis-home>
+      <arcgis-navigation-toggle slot="bottom-right"></arcgis-navigation-toggle>
+      <arcgis-compass slot="bottom-right"></arcgis-compass>
+    </arcgis-scene>
+
+    <!-- ================= Sidebar ================= -->
+    <aside id="sidebar" class="surface" aria-label="Tools">
+      <div class="brand">
+        <div>
+          <h1>Praha 3D</h1>
+          <p class="place">Dejvice, Praha 6</p>
+          <div class="readout" aria-live="off" title="Camera position">
+            <span>Lat<b id="roLat">–</b></span>
+            <span>Lon<b id="roLon">–</b></span>
+            <span>Alt<b id="roAlt">–</b></span>
+          </div>
+        </div>
+        <button id="collapseBtn" class="icon-btn" type="button" aria-label="Collapse panel" aria-expanded="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4" /></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-body">
+        <div class="tabs" role="tablist">
+          <button id="tabVehiclesBtn" role="tab" aria-selected="true" aria-controls="tabVehicles" type="button">
+            Vehicles<span class="count" id="vehicleCount"></span>
+          </button>
+          <button id="tabDataBtn" role="tab" aria-selected="false" aria-controls="tabData" type="button">Add layer</button>
+        </div>
+
+        <!-- ---------- Vehicles ---------- -->
+        <section id="tabVehicles" class="tab-panel" role="tabpanel">
+          <details class="add-vehicle" id="addVehicleBox" open>
+            <summary>Add a vehicle</summary>
+            <div class="inner">
+              <label class="field">
+                <span class="label">Name</span>
+                <input id="vehicleName" type="text" placeholder="e.g. Tram 22 – defaults to the file name" />
+              </label>
+
+              <div class="field">
+                <span class="label">3D model</span>
+                <label class="file-slot" id="glbSlot">
+                  <span class="ext">GLB</span>
+                  <span class="file-name">Choose a .glb file</span>
+                  <input id="glbInput" type="file" accept=".glb,model/gltf-binary" />
+                </label>
+              </div>
+
+              <div class="field">
+                <span class="label">Path</span>
+                <label class="file-slot" id="pathSlot">
+                  <span class="ext">GeoJSON</span>
+                  <span class="file-name">Choose a line or polygon in EPSG:3857</span>
+                  <input id="pathInput" type="file" accept=".geojson,.json,application/geo+json,application/json" />
+                </label>
+              </div>
+
+              <button id="addVehicleBtn" class="btn block" type="button" disabled>Add vehicle</button>
+              <p class="status" id="vehicleStatus"></p>
+            </div>
+          </details>
+
+          <div class="list-head">
+            <h2>In the scene</h2>
+            <button id="playAllBtn" class="btn quiet" type="button" hidden>Pause all</button>
+          </div>
+          <ul class="vehicles" id="vehicleList" role="listbox" aria-label="Vehicles"></ul>
+          <p class="empty" id="vehiclesEmpty">No vehicles yet. Add a 3D model and a path above, and it starts driving straight away.</p>
+
+          <!-- Editor for the selected vehicle -->
+          <div class="editor" id="editor" hidden>
+            <div class="editor-title">
+              <span class="swatch" id="edSwatch"></span>
+              <input id="edName" type="text" aria-label="Vehicle name" />
+            </div>
+
+            <label class="field">
+              <span class="label">Speed <small id="edSpeedLabel"></small></span>
+              <input id="edSpeed" type="range" min="1" max="40" step="1" />
+            </label>
+
+            <div class="field">
+              <span class="label">Height reference</span>
+              <div class="segmented" id="edHeightMode">
+                <button type="button" data-value="terrain" aria-pressed="true">On terrain</button>
+                <button type="button" data-value="path" aria-pressed="false">Path Z values</button>
+              </div>
+              <span class="hint" id="edHeightHint"></span>
+            </div>
+
+            <div class="field">
+              <span class="label">Height shift <small>meters, positive = up</small></span>
+              <div class="pair">
+                <input id="edOffsetRange" type="range" min="-100" max="100" step="0.5" aria-label="Height shift" />
+                <input id="edOffset" type="number" step="0.1" aria-label="Height shift in meters" />
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="label">Model rotation</span>
+              <div class="segmented" id="edRotation">
+                <button type="button" data-value="0">0°</button>
+                <button type="button" data-value="90">90°</button>
+                <button type="button" data-value="180">180°</button>
+                <button type="button" data-value="270">270°</button>
+              </div>
+              <span class="hint">Change this if the vehicle drives sideways or backwards.</span>
+            </div>
+
+            <label class="check"><input id="edShowPath" type="checkbox" /> Show path</label>
+
+            <div class="actions">
+              <button id="edPlay" class="btn quiet" type="button">Pause</button>
+              <button id="edZoom" class="btn quiet" type="button">Zoom to</button>
+              <button id="edRemove" class="btn quiet danger" type="button" style="grid-column: 1 / -1">Remove vehicle</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---------- Add layer ---------- -->
+        <section id="tabData" class="tab-panel" role="tabpanel" hidden>
+          <form id="addLayerForm" autocomplete="off">
+            <p class="lede">Paste the URL of an ArcGIS service or an item page. The layer appears in the layer list, where you can reorder and hide it.</p>
+            <label class="field">
+              <span class="label">Service URL</span>
+              <input id="layerUrl" type="url" required placeholder="https://…/FeatureServer/0" />
+            </label>
+            <label class="field">
+              <span class="label">Name in layer list</span>
+              <input id="layerName" type="text" placeholder="Optional – the service name is used otherwise" />
+            </label>
+            <label class="field">
+              <span class="label">Layer type</span>
+              <select id="layerType">
+                <option value="auto" selected>Detect from URL</option>
+                <option value="feature">Feature layer</option>
+                <option value="scene">Scene layer (buildings, 3D objects, points)</option>
+                <option value="vector-tile">Vector tile layer (basemap)</option>
+                <option value="tile">Tile layer (basemap)</option>
+                <option value="map-image">Map image layer</option>
+                <option value="imagery">Imagery layer</option>
+                <option value="imagery-tile">Imagery tile layer</option>
+                <option value="elevation">Elevation (terrain)</option>
+                <option value="geojson">GeoJSON file (WGS84)</option>
+                <option value="3dtiles">3D Tiles mesh</option>
+              </select>
+            </label>
+            <button id="addLayerBtn" class="btn block" type="submit">Add layer</button>
+            <p class="status" id="layerStatus"></p>
+          </form>
+        </section>
+      </div>
+    </aside>
+
+    <!-- ================= Layer list ================= -->
+    <aside id="layersCard" class="surface" aria-label="Layers">
+      <header>
+        <h2>Layers</h2>
+        <button id="layersToggle" class="icon-btn" type="button" aria-label="Collapse layer list" aria-expanded="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4" /></svg>
+        </button>
+      </header>
+      <div class="layers-body">
+        <p class="layers-empty" id="layersEmpty">Layers and vehicles you add appear here. Drag to reorder, tick to show or hide.</p>
+        <arcgis-layer-list
+          id="layerList"
+          reference-element="#scene"
+          drag-enabled
+          visibility-appearance="checkbox"
+        ></arcgis-layer-list>
+      </div>
+    </aside>
+
+    <div id="message" role="status" hidden></div>
+
+    <script type="module">
+      const [
+        ArcGISMap,
+        Basemap,
+        Ground,
+        Layer,
+        VectorTileLayer,
+        ElevationLayer,
+        GraphicsLayer,
+        Graphic,
+        Point,
+        Polyline,
+        Camera,
+        esriRequest,
+        reactiveUtils,
+        webMercatorUtils
+      ] = await $arcgis.import([
+        "@arcgis/core/Map.js",
+        "@arcgis/core/Basemap.js",
+        "@arcgis/core/Ground.js",
+        "@arcgis/core/layers/Layer.js",
+        "@arcgis/core/layers/VectorTileLayer.js",
+        "@arcgis/core/layers/ElevationLayer.js",
+        "@arcgis/core/layers/GraphicsLayer.js",
+        "@arcgis/core/Graphic.js",
+        "@arcgis/core/geometry/Point.js",
+        "@arcgis/core/geometry/Polyline.js",
+        "@arcgis/core/Camera.js",
+        "@arcgis/core/request.js",
+        "@arcgis/core/core/reactiveUtils.js",
+        "@arcgis/core/geometry/support/webMercatorUtils.js"
+      ]);
+
+      // ==================================================================
+      // Configuration
+      // ==================================================================
+      const TERRAIN_URL =
+        "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/dtm1m_wgs_test1_3/ImageServer";
+
+      // ".../zakladni_mapa/VectorTileServer" is in S-JTSK (EPSG:5514) and cannot be combined with
+      // the Web Mercator terrain in a 3D scene, so the "_WGS" version is used.
+      const BASEMAP_URL =
+        "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/zakladni_mapa_WGS/VectorTileServer";
+
+      // Start view: looking north-west over Dejvice (Vítězné náměstí) from the south-east
+      const START_CAMERA = new Camera({
+        position: { longitude: 14.4035, latitude: 50.0905, z: 820 },
+        heading: 337,
+        tilt: 64
+      });
+
+      const SR = { wkid: 3857 };
+      const DEFAULT_SPEED = 12; // m/s
+
+      // Path colours, one per vehicle
+      const PALETTE = ["#1f7a5c", "#2457c5", "#c2185b", "#b26a00", "#6d3fc0", "#0f7f8c", "#a33a2c"];
+
+      const TILED_TYPES = new Set(["vector-tile", "tile", "imagery-tile", "web-tile", "wmts"]);
+
+      const LAYER_MODULES = {
+        feature: "@arcgis/core/layers/FeatureLayer.js",
+        scene: "@arcgis/core/layers/SceneLayer.js",
+        "vector-tile": "@arcgis/core/layers/VectorTileLayer.js",
+        tile: "@arcgis/core/layers/TileLayer.js",
+        "map-image": "@arcgis/core/layers/MapImageLayer.js",
+        imagery: "@arcgis/core/layers/ImageryLayer.js",
+        "imagery-tile": "@arcgis/core/layers/ImageryTileLayer.js",
+        elevation: "@arcgis/core/layers/ElevationLayer.js",
+        geojson: "@arcgis/core/layers/GeoJSONLayer.js",
+        "3dtiles": "@arcgis/core/layers/IntegratedMesh3DTilesLayer.js"
+      };
+
+      // ==================================================================
+      // Small helpers
+      // ==================================================================
+      const $ = (id) => document.getElementById(id);
+
+      const messageEl = $("message");
+      let messageTimer;
+      function showMessage(text, ms = 9000) {
+        messageEl.textContent = text;
+        messageEl.hidden = false;
+        clearTimeout(messageTimer);
+        messageTimer = setTimeout(() => (messageEl.hidden = true), ms);
+        console.warn(text);
+      }
+
+      function setStatus(el, text, kind = "") {
+        el.textContent = text;
+        el.className = `status ${kind}`;
+      }
+
+      function srLabel(sr) {
+        return sr ? `EPSG:${sr.latestWkid ?? sr.wkid}` : "an unknown coordinate system";
+      }
+
+      function goTo(target, options) {
+        return viewElement.goTo(target, options).catch((error) => {
+          if (error.name !== "AbortError") console.error(error);
+        });
+      }
+
+      // ==================================================================
+      // Map and view
+      // ==================================================================
+      const basemapLayer = new VectorTileLayer({ url: BASEMAP_URL });
+      basemapLayer
+        .load()
+        .then(() => {
+          if (!basemapLayer.spatialReference?.isWebMercator) {
+            showMessage(
+              `The basemap is in ${srLabel(basemapLayer.spatialReference)}, but the terrain is in Web Mercator (EPSG:3857). ` +
+                "Both must use the same coordinate system in a 3D scene."
+            );
+          }
+        })
+        .catch((error) => showMessage(`The basemap could not be loaded: ${error.message}`));
+
+      const map = new ArcGISMap({
+        basemap: new Basemap({ baseLayers: [basemapLayer] }),
+        ground: new Ground({ layers: [new ElevationLayer({ url: TERRAIN_URL })] })
+      });
+
+      const viewElement = $("scene");
+      viewElement.camera = START_CAMERA;
+      viewElement.map = map;
+      await viewElement.viewOnReady();
+
+      // Live camera read-out in the header
+      const roLat = $("roLat");
+      const roLon = $("roLon");
+      const roAlt = $("roAlt");
+      reactiveUtils.watch(
+        () => viewElement.view?.camera,
+        (camera) => {
+          if (!camera) return;
+          const { latitude, longitude, z } = camera.position;
+          roLat.textContent = `${latitude.toFixed(4)}°`;
+          roLon.textContent = `${longitude.toFixed(4)}°`;
+          roAlt.textContent = `${Math.round(z)} m`;
+        },
+        { initial: true }
+      );
+
+      // ==================================================================
+      // Panels: collapse + tabs
+      // ==================================================================
+      function wireCollapse(buttonId, containerId) {
+        const button = $(buttonId);
+        const container = $(containerId);
+        button.addEventListener("click", () => {
+          const collapsed = container.classList.toggle("collapsed");
+          button.setAttribute("aria-expanded", String(!collapsed));
+        });
+      }
+      wireCollapse("collapseBtn", "sidebar");
+      wireCollapse("layersToggle", "layersCard");
+
+      const tabs = [
+        { button: $("tabVehiclesBtn"), panel: $("tabVehicles") },
+        { button: $("tabDataBtn"), panel: $("tabData") }
+      ];
+      for (const tab of tabs) {
+        tab.button.addEventListener("click", () => {
+          for (const t of tabs) {
+            const active = t === tab;
+            t.button.setAttribute("aria-selected", String(active));
+            t.panel.hidden = !active;
+          }
+        });
+      }
+
+      // ==================================================================
+      // Layer list
+      // ==================================================================
+      const layerList = $("layerList");
+      const layersEmpty = $("layersEmpty");
+
+      function updateLayersEmpty() {
+        layersEmpty.hidden = map.layers.length > 0;
+      }
+      map.layers.on("change", updateLayersEmpty);
+      updateLayersEmpty();
+
+      layerList.listItemCreatedFunction = (event) => {
+        const item = event.item;
+        if (item.parent) return; // actions only on top-level layers
+        item.actionsSections = [
+          [
+            { title: "Zoom to layer", icon: "zoom-to-object", id: "zoom-to" },
+            { title: "Remove layer", icon: "trash", id: "remove" }
+          ]
+        ];
+      };
+
+      layerList.addEventListener("arcgisTriggerAction", async (event) => {
+        const { action, item } = event.detail;
+        const layer = item.layer;
+        const vehicle = vehicles.find((v) => v.layer === layer);
+
+        if (action.id === "remove") {
+          vehicle ? removeVehicle(vehicle) : map.remove(layer);
+        }
+
+        if (action.id === "zoom-to") {
+          if (vehicle) {
+            zoomToVehicle(vehicle);
+          } else {
+            await layer.load().catch(() => {});
+            if (layer.fullExtent) goTo(layer.fullExtent);
+          }
+        }
+      });
+
+      // ==================================================================
+      // Add layer from URL
+      // ==================================================================
+      const addLayerForm = $("addLayerForm");
+      const layerUrlInput = $("layerUrl");
+      const layerNameInput = $("layerName");
+      const layerTypeSelect = $("layerType");
+      const addLayerBtn = $("addLayerBtn");
+      const layerStatus = $("layerStatus");
+
+      function detectType(url) {
+        if (/\/home\/.*[?&]id=[0-9a-f]{32}/i.test(url)) return "portal-item";
+        if (/\/VectorTileServer/i.test(url)) return "vector-tile";
+        if (/\/(Feature|Map|Image|Scene)Server/i.test(url)) return "server";
+        if (/tileset\.json(\?|#|$)/i.test(url)) return "3dtiles";
+        if (/\.(geo)?json(\?|#|$)/i.test(url)) return "geojson";
+        return null;
+      }
+
+      async function createLayer(url, type) {
+        if (type === "auto") {
+          type = detectType(url);
+          if (!type) throw new Error("the layer type can't be detected from this URL. Choose it under Layer type.");
+        }
+
+        // ArcGIS Online / Enterprise item page, e.g. https://www.arcgis.com/home/item.html?id=…
+        if (type === "portal-item") {
+          const [, portalUrl, id] = url.match(/^(.*?)\/home\/.*[?&]id=([0-9a-f]{32})/i);
+          return Layer.fromPortalItem({ portalItem: { id, portal: { url: portalUrl } } });
+        }
+
+        if (type === "server") {
+          // Elevation image services must become terrain, not a draped image
+          const baseUrl = url.split("?")[0];
+          if (/\/ImageServer\/?$/i.test(baseUrl)) {
+            const { data } = await esriRequest(baseUrl, { query: { f: "json" }, responseType: "json" });
+            if (data?.serviceDataType === "esriImageServiceDataTypeElevation" || /elevation/i.test(data?.cacheType ?? "")) {
+              type = "elevation";
+            }
+          }
+          if (type === "server") return Layer.fromArcGISServerUrl({ url });
+        }
+
+        const [LayerClass] = await $arcgis.import([LAYER_MODULES[type]]);
+        return new LayerClass({ url });
+      }
+
+      function addToMap(layer) {
+        if (layer.type === "elevation") {
+          map.ground.layers.add(layer);
+          return;
+        }
+        if (TILED_TYPES.has(layer.type)) {
+          // above existing basemap-like layers, below everything else
+          let index = 0;
+          while (index < map.layers.length && TILED_TYPES.has(map.layers.at(index).type)) index++;
+          map.add(layer, index);
+        } else {
+          map.add(layer);
+        }
+      }
+
+      addLayerForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const url = layerUrlInput.value.trim();
+        const name = layerNameInput.value.trim();
+        if (!url) return;
+
+        addLayerBtn.disabled = true;
+        setStatus(layerStatus, "Loading layer…");
+
+        try {
+          const layer = await createLayer(url, layerTypeSelect.value);
+          await layer.load();
+          if (name) layer.title = name;
+
+          const sr = layer.spatialReference;
+          let warning = "";
+          if (TILED_TYPES.has(layer.type) && sr && !sr.isWebMercator) {
+            warning = `Added, but this layer is in ${srLabel(sr)} and probably won't show. The scene uses Web Mercator (EPSG:3857).`;
+          } else if (layer.type === "elevation" && sr && !sr.isWebMercator && !sr.isWGS84) {
+            warning = `Added, but this terrain is in ${srLabel(sr)} and probably won't be used. The scene uses Web Mercator (EPSG:3857).`;
+          }
+
+          addToMap(layer);
+
+          const done =
+            layer.type === "elevation"
+              ? `“${layer.title}” was added to the terrain. Terrain doesn't appear in the layer list.`
+              : `“${layer.title}” was added to the layer list.`;
+          setStatus(layerStatus, warning || done, warning ? "warning" : "ok");
+
+          layerUrlInput.value = "";
+          layerNameInput.value = "";
+          layerTypeSelect.value = "auto";
+        } catch (error) {
+          console.error(error);
+          setStatus(layerStatus, `The layer couldn't be added: ${error.message}`, "error");
+        } finally {
+          addLayerBtn.disabled = false;
+        }
+      });
+
+      // ==================================================================
+      // Paths
+      // ==================================================================
+
+      // Coordinate list of the first feature, whatever the geometry type
+      function extractPath(geojson) {
+        const geom =
+          geojson.type === "FeatureCollection"
+            ? geojson.features?.[0]?.geometry
+            : geojson.type === "Feature"
+              ? geojson.geometry
+              : geojson;
+
+        switch (geom?.type) {
+          case "LineString":
+            return geom.coordinates;
+          case "Polygon": // circle stored as polygon -> outer ring
+          case "MultiLineString":
+            return geom.coordinates[0];
+          case "MultiPolygon":
+            return geom.coordinates[0][0];
+          default:
+            throw new Error(`the path must be a line or polygon, not “${geom?.type ?? "nothing"}”`);
+        }
+      }
+
+      // Vertices (x, y, z), cumulative distances and length
+      function buildPath(coords) {
+        let pts = coords.map((c) => [Number(c[0]), Number(c[1]), c.length > 2 ? Number(c[2]) : NaN]);
+        if (pts.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))) {
+          throw new Error("the path contains invalid coordinates");
+        }
+        const hasZ = pts.every((p) => Number.isFinite(p[2]));
+        if (!hasZ) pts = pts.map(([x, y]) => [x, y, 0]);
+
+        // Safety net: if the file turns out to be in lon/lat, convert it to Web Mercator
+        const wasLonLat = pts.every(([x, y]) => Math.abs(x) <= 180 && Math.abs(y) <= 90);
+        if (wasLonLat) pts = pts.map(([lon, lat, z]) => [...webMercatorUtils.lngLatToXY(lon, lat), z]);
+
+        // Drop repeated vertices and close the loop
+        pts = pts.filter((p, i) => i === 0 || p[0] !== pts[i - 1][0] || p[1] !== pts[i - 1][1]);
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) pts.push([...first]);
+        if (pts.length < 3) throw new Error("the path needs at least two distinct vertices");
+
+        const cum = [0];
+        for (let i = 1; i < pts.length; i++) {
+          cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+        }
+        const total = cum[cum.length - 1];
+
+        // Web Mercator stretches distances by 1 / cos(latitude); correct the speed for that
+        const centerY = pts.reduce((sum, p) => sum + p[1], 0) / pts.length;
+        const [, centerLat] = webMercatorUtils.xyToLngLat(pts[0][0], centerY);
+        const mercScale = 1 / Math.cos((centerLat * Math.PI) / 180);
+
+        return { pts, cum, total, mercScale, hasZ, wasLonLat, lengthMeters: total / mercScale };
+      }
+
+      function positionAt(path, d) {
+        const { pts, cum, total } = path;
+        d = ((d % total) + total) % total;
+        const i = cum.findIndex((c) => c > d);
+        const t = (d - cum[i - 1]) / (cum[i] - cum[i - 1]);
+        const [x0, y0, z0] = pts[i - 1];
+        const [x1, y1, z1] = pts[i];
+        return {
+          x: x0 + t * (x1 - x0),
+          y: y0 + t * (y1 - y0),
+          z: z0 + t * (z1 - z0),
+          heading: (Math.atan2(x1 - x0, y1 - y0) * 180) / Math.PI // clockwise from north
+        };
+      }
+
+      // Shortest-way angle interpolation, so vehicles turn smoothly between vertices
+      function smoothAngle(current, target, dt) {
+        const delta = ((target - current + 540) % 360) - 180;
+        return current + delta * Math.min(1, dt * 8);
+      }
+
+      // Tiny drawing of the path's real shape for the vehicle list
+      function pathThumbnail(path, color) {
+        const xs = path.pts.map((p) => p[0]);
+        const ys = path.pts.map((p) => p[1]);
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        const size = Math.max(Math.max(...xs) - minX, Math.max(...ys) - minY) || 1;
+        const pad = 7;
+        const scale = (40 - pad * 2) / size;
+        const offX = pad + (40 - pad * 2 - (Math.max(...xs) - minX) * scale) / 2;
+        const offY = pad + (40 - pad * 2 - (Math.max(...ys) - minY) * scale) / 2;
+        const points = path.pts
+          .map(([x, y]) => `${(offX + (x - minX) * scale).toFixed(1)},${(40 - offY - (y - minY) * scale).toFixed(1)}`)
+          .join(" ");
+
+        const NS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("viewBox", "0 0 40 40");
+        svg.setAttribute("class", "thumb");
+        svg.setAttribute("aria-hidden", "true");
+        const line = document.createElementNS(NS, "polyline");
+        line.setAttribute("points", points);
+        line.setAttribute("fill", "none");
+        line.setAttribute("stroke", color);
+        line.setAttribute("stroke-width", "2.2");
+        line.setAttribute("stroke-linejoin", "round");
+        line.setAttribute("stroke-linecap", "round");
+        svg.append(line);
+        return svg;
+      }
+
+      // ==================================================================
+      // Vehicles
+      // ==================================================================
+      const vehicles = [];
+      let selectedId = null;
+      let nextId = 1;
+
+      function useZ(v) {
+        return v.heightMode === "path" && v.path.hasZ;
+      }
+
+      function vehicleSymbol(v) {
+        return {
+          type: "point-3d",
+          symbolLayers: [
+            {
+              type: "object",
+              resource: { href: v.modelUrl },
+              anchor: "bottom",
+              heading: v.heading + v.headingOffset
+            }
+          ]
+        };
+      }
+
+      function pointAt(v, p) {
+        return useZ(v)
+          ? new Point({ x: p.x, y: p.y, z: p.z, spatialReference: SR })
+          : new Point({ x: p.x, y: p.y, spatialReference: SR });
+      }
+
+      function pathPolyline(v) {
+        const z = useZ(v);
+        return new Polyline({
+          paths: [v.path.pts.map(([x, y, pz]) => (z ? [x, y, pz] : [x, y]))],
+          hasZ: z,
+          spatialReference: SR
+        });
+      }
+
+      // Height reference + shift: terrain (relative to ground) or the path's own Z values (absolute)
+      function applyElevation(v) {
+        v.layer.elevationInfo = {
+          mode: useZ(v) ? "absolute-height" : "relative-to-ground",
+          offset: v.zOffset
+        };
+        v.pathGraphic.geometry = pathPolyline(v);
+        v.graphic.geometry = pointAt(v, positionAt(v.path, v.distance));
+      }
+
+      function refreshSymbol(v) {
+        v.graphic.symbol = vehicleSymbol(v);
+      }
+
+      // ---------- add vehicle form ----------
+      const vehicleNameInput = $("vehicleName");
+      const glbInput = $("glbInput");
+      const pathInput = $("pathInput");
+      const glbSlot = $("glbSlot");
+      const pathSlot = $("pathSlot");
+      const addVehicleBtn = $("addVehicleBtn");
+      const vehicleStatus = $("vehicleStatus");
+
+      function syncFileSlot(input, slot, placeholder) {
+        const file = input.files[0];
+        slot.classList.toggle("filled", Boolean(file));
+        slot.querySelector(".file-name").textContent = file ? file.name : placeholder;
+      }
+
+      function updateAddButton() {
+        addVehicleBtn.disabled = !(glbInput.files.length && pathInput.files.length);
+      }
+
+      glbInput.addEventListener("change", () => {
+        syncFileSlot(glbInput, glbSlot, "Choose a .glb file");
+        updateAddButton();
+      });
+      pathInput.addEventListener("change", () => {
+        syncFileSlot(pathInput, pathSlot, "Choose a line or polygon in EPSG:3857");
+        updateAddButton();
+      });
+
+      async function addVehicle() {
+        const glbFile = glbInput.files[0];
+        const pathFile = pathInput.files[0];
+        if (!glbFile || !pathFile) return;
+
+        addVehicleBtn.disabled = true;
+        setStatus(vehicleStatus, "Loading…");
+
+        try {
+          const magic = new TextDecoder().decode(await glbFile.slice(0, 4).arrayBuffer());
+          if (magic !== "glTF") throw new Error(`“${glbFile.name}” is not a binary glTF (.glb) file`);
+
+          let geojson;
+          try {
+            geojson = JSON.parse(await pathFile.text());
+          } catch {
+            throw new Error(`“${pathFile.name}” is not a valid GeoJSON file`);
+          }
+          const path = buildPath(extractPath(geojson));
+
+          const id = nextId++;
+          const name = vehicleNameInput.value.trim() || glbFile.name.replace(/\.glb$/i, "");
+          const color = PALETTE[(id - 1) % PALETTE.length];
+          const start = positionAt(path, 0);
+
+          // The file becomes a local URL; the "#….glb" ending tells the SDK it is a glTF model
+          const modelUrl = `${URL.createObjectURL(glbFile)}#model.glb`;
+
+          const v = {
+            id,
+            name,
+            color,
+            path,
+            modelUrl,
+            distance: 0,
+            heading: start.heading,
+            headingOffset: 0,
+            speed: DEFAULT_SPEED,
+            playing: true,
+            heightMode: "terrain",
+            zOffset: 0,
+            showPath: false
+          };
+
+          v.graphic = new Graphic({ geometry: pointAt(v, start), symbol: vehicleSymbol(v) });
+          v.pathGraphic = new Graphic({
+            geometry: pathPolyline(v),
+            symbol: { type: "simple-line", color, width: 3 },
+            visible: v.showPath
+          });
+          v.layer = new GraphicsLayer({ title: name, graphics: [v.pathGraphic, v.graphic] });
+          applyElevation(v);
+          map.add(v.layer);
+
+          vehicles.push(v);
+          selectVehicle(id);
+          zoomToVehicle(v);
+
+          // Reset the form for the next vehicle
+          vehicleNameInput.value = "";
+          glbInput.value = "";
+          pathInput.value = "";
+          syncFileSlot(glbInput, glbSlot, "Choose a .glb file");
+          syncFileSlot(pathInput, pathSlot, "Choose a line or polygon in EPSG:3857");
+
+          const notes = [];
+          if (path.wasLonLat) notes.push("The path was in longitude/latitude and was converted to EPSG:3857.");
+          if (path.hasZ) notes.push("The path has Z values – switch the height reference to use them.");
+          setStatus(vehicleStatus, [`“${name}” added.`, ...notes].join(" "), path.wasLonLat ? "warning" : "ok");
+        } catch (error) {
+          console.error(error);
+          setStatus(vehicleStatus, `The vehicle couldn't be added: ${error.message}.`, "error");
+        } finally {
+          updateAddButton();
+        }
+      }
+
+      addVehicleBtn.addEventListener("click", addVehicle);
+
+      function removeVehicle(v) {
+        const index = vehicles.indexOf(v);
+        if (index === -1) return;
+        vehicles.splice(index, 1);
+        map.remove(v.layer);
+        v.layer.destroy();
+        URL.revokeObjectURL(v.modelUrl.split("#")[0]);
+        if (selectedId === v.id) selectedId = vehicles.at(-1)?.id ?? null;
+        renderVehicles();
+      }
+
+      function zoomToVehicle(v) {
+        goTo({ target: v.pathGraphic.geometry, tilt: 60 });
+      }
+
+      // ---------- vehicle list ----------
+      const vehicleList = $("vehicleList");
+      const vehiclesEmpty = $("vehiclesEmpty");
+      const vehicleCount = $("vehicleCount");
+      const playAllBtn = $("playAllBtn");
+
+      function selectVehicle(id) {
+        selectedId = id;
+        renderVehicles();
+      }
+
+      function renderVehicles() {
+        vehicleList.replaceChildren(
+          ...vehicles.map((v) => {
+            const li = document.createElement("li");
+            li.className = "vehicle";
+            li.setAttribute("role", "option");
+            li.setAttribute("aria-selected", String(v.id === selectedId));
+            li.tabIndex = 0;
+
+            const text = document.createElement("div");
+            text.style.minWidth = "0";
+            const name = document.createElement("div");
+            name.className = "name";
+            name.textContent = v.name;
+            const meta = document.createElement("div");
+            meta.className = "meta";
+            meta.textContent = `${Math.round(v.path.lengthMeters)} m loop, ${v.playing ? `${v.speed} m/s` : "paused"}`;
+            text.append(name, meta);
+
+            const play = document.createElement("button");
+            play.type = "button";
+            play.className = "icon-btn";
+            play.setAttribute("aria-label", v.playing ? `Pause ${v.name}` : `Play ${v.name}`);
+            play.innerHTML = v.playing
+              ? '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>'
+              : '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5v9l7.5-4.5z"/></svg>';
+            play.addEventListener("click", (event) => {
+              event.stopPropagation();
+              v.playing = !v.playing;
+              renderVehicles();
+            });
+
+            li.append(pathThumbnail(v.path, v.color), text, play);
+            li.addEventListener("click", () => selectVehicle(v.id));
+            li.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                selectVehicle(v.id);
+              }
+            });
+            return li;
+          })
+        );
+
+        vehiclesEmpty.hidden = vehicles.length > 0;
+        vehicleCount.textContent = vehicles.length ? String(vehicles.length) : "";
+        playAllBtn.hidden = vehicles.length < 2;
+        playAllBtn.textContent = vehicles.some((v) => v.playing) ? "Pause all" : "Play all";
+        $("addVehicleBox").open = vehicles.length === 0 || $("addVehicleBox").open;
+
+        renderEditor();
+      }
+
+      playAllBtn.addEventListener("click", () => {
+        const anyPlaying = vehicles.some((v) => v.playing);
+        for (const v of vehicles) v.playing = !anyPlaying;
+        renderVehicles();
+      });
+
+      // ---------- editor for the selected vehicle ----------
+      const editor = $("editor");
+      const edSwatch = $("edSwatch");
+      const edName = $("edName");
+      const edSpeed = $("edSpeed");
+      const edSpeedLabel = $("edSpeedLabel");
+      const edHeightMode = $("edHeightMode");
+      const edHeightHint = $("edHeightHint");
+      const edOffsetRange = $("edOffsetRange");
+      const edOffset = $("edOffset");
+      const edRotation = $("edRotation");
+      const edShowPath = $("edShowPath");
+      const edPlay = $("edPlay");
+      const edZoom = $("edZoom");
+      const edRemove = $("edRemove");
+
+      const selected = () => vehicles.find((v) => v.id === selectedId);
+
+      function setPressed(group, value) {
+        for (const button of group.querySelectorAll("button")) {
+          button.setAttribute("aria-pressed", String(button.dataset.value === String(value)));
+        }
+      }
+
+      function renderEditor() {
+        const v = selected();
+        editor.hidden = !v;
+        if (!v) return;
+
+        edSwatch.style.background = v.color;
+        if (document.activeElement !== edName) edName.value = v.name;
+        edSpeed.value = v.speed;
+        edSpeedLabel.textContent = `${v.speed} m/s (${Math.round(v.speed * 3.6)} km/h)`;
+
+        setPressed(edHeightMode, v.heightMode);
+        const pathBtn = edHeightMode.querySelector('[data-value="path"]');
+        pathBtn.disabled = !v.path.hasZ;
+        edHeightHint.textContent = v.path.hasZ
+          ? v.heightMode === "path"
+            ? "Uses the Z values stored in the path, plus the shift below."
+            : "Follows the terrain, raised or lowered by the shift below."
+          : "This path has no Z values, so the vehicle follows the terrain.";
+
+        edOffsetRange.value = Math.max(-100, Math.min(100, v.zOffset));
+        if (document.activeElement !== edOffset) edOffset.value = v.zOffset;
+
+        setPressed(edRotation, v.headingOffset);
+        edShowPath.checked = v.showPath;
+        edPlay.textContent = v.playing ? "Pause" : "Play";
+      }
+
+      edName.addEventListener("input", () => {
+        const v = selected();
+        if (!v) return;
+        v.name = edName.value.trim() || "Vehicle";
+        v.layer.title = v.name;
+        renderVehicles();
+      });
+
+      edSpeed.addEventListener("input", () => {
+        const v = selected();
+        if (!v) return;
+        v.speed = Number(edSpeed.value);
+        renderVehicles();
+      });
+
+      edHeightMode.addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        const v = selected();
+        if (!button || button.disabled || !v) return;
+        v.heightMode = button.dataset.value;
+        applyElevation(v);
+        renderEditor();
+      });
+
+      function setOffset(value) {
+        const v = selected();
+        if (!v || !Number.isFinite(value)) return;
+        v.zOffset = value;
+        applyElevation(v);
+        renderEditor();
+      }
+      edOffsetRange.addEventListener("input", () => setOffset(Number(edOffsetRange.value)));
+      edOffset.addEventListener("input", () => setOffset(Number(edOffset.value)));
+
+      edRotation.addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        const v = selected();
+        if (!button || !v) return;
+        v.headingOffset = Number(button.dataset.value);
+        refreshSymbol(v);
+        renderEditor();
+      });
+
+      edShowPath.addEventListener("change", () => {
+        const v = selected();
+        if (!v) return;
+        v.showPath = edShowPath.checked;
+        v.pathGraphic.visible = v.showPath;
+      });
+
+      edPlay.addEventListener("click", () => {
+        const v = selected();
+        if (!v) return;
+        v.playing = !v.playing;
+        renderVehicles();
+      });
+
+      edZoom.addEventListener("click", () => {
+        const v = selected();
+        if (v) zoomToVehicle(v);
+      });
+
+      edRemove.addEventListener("click", () => {
+        const v = selected();
+        if (v) removeVehicle(v);
+      });
+
+      renderVehicles();
+
+      // ==================================================================
+      // Animation loop
+      // ==================================================================
+      let lastTime = performance.now();
+
+      function frame(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.1); // cap to avoid jumps after tab switches
+        lastTime = now;
+
+        for (const v of vehicles) {
+          if (!v.playing) continue;
+          const { path } = v;
+          v.distance = (v.distance + dt * v.speed * path.mercScale) % path.total;
+          const p = positionAt(path, v.distance);
+          v.graphic.geometry = pointAt(v, p);
+          v.heading = smoothAngle(v.heading, p.heading, dt);
+          refreshSymbol(v); // symbols must be replaced, not mutated
+        }
+
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>
