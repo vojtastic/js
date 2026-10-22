@@ -1,0 +1,2901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Standpoint</title>
+<meta name="description" content="Find where and how a photograph was taken: pair photo points with a 3D mesh and solve the camera position, orientation and focal length.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/dark/main.css">
+<style>
+/* Layout: two working panes (photo | 3D scene) over a results dock.
+   Darkroom palette: warm graphite so photographs read true; safelight amber
+   marks what you measured, fixer cyan marks what the solver computed. */
+:root {
+  --bg: #121110;
+  --panel: #191816;
+  --raised: #22201d;
+  --sunken: #0d0c0b;
+  --line: #2e2b27;
+  --line-strong: #45403a;
+  --text: #ece6db;
+  --muted: #a0978a;
+  --faint: #6d665c;
+  --safelight: #f2a541;
+  --safelight-ink: #1d1305;
+  --safelight-soft: rgba(242, 165, 65, 0.14);
+  --fixer: #7cc8da;
+  --fixer-soft: rgba(124, 200, 218, 0.14);
+  --bad: #ef6b55;
+  --bad-soft: rgba(239, 107, 85, 0.14);
+  --good: #a3d07f;
+
+  --font-ui: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-md: 14px;
+  --fs-lg: 17px;
+  --radius: 6px;
+  --dock-h: clamp(240px, 35vh, 400px);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--fs-md)/1.45 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.label {
+  font-size: var(--fs-xs);
+  font-stretch: 75%;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- app shell ---------- */
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(120px, 1fr) 7px var(--dock-h);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  min-width: 0;
+}
+.brand { display: flex; align-items: center; gap: 10px; flex: none; }
+.brand svg { width: 30px; height: 22px; flex: none; }
+.brand-name {
+  font-size: 19px;
+  font-weight: 800;
+  font-stretch: 125%;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.brand-sub { font-size: var(--fs-xs); color: var(--muted); font-stretch: 85%; line-height: 1.2; }
+
+.steps { display: flex; align-items: center; gap: 4px; margin-inline: auto; min-width: 0; overflow: hidden; }
+.step {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.step-dot {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  font: 600 10.5px/1 var(--font-mono);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+.step.is-done .step-dot { background: var(--safelight); border-color: var(--safelight); color: var(--safelight-ink); }
+.step.is-done { color: var(--text); }
+.step.is-current { background: var(--raised); color: var(--text); }
+.step.is-current .step-dot { border-color: var(--safelight); color: var(--safelight); }
+.step-sep { width: 14px; height: 1px; background: var(--line-strong); flex: none; }
+.step b { font-weight: 600; font-family: var(--font-mono); font-size: 11.5px; color: var(--safelight); }
+
+.top-actions { display: flex; gap: 8px; flex: none; }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 32px; padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--raised);
+  font-size: var(--fs-sm); font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s;
+}
+.btn:hover { background: #2b2824; border-color: #57514a; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn svg { width: 15px; height: 15px; flex: none; }
+.btn-sm { height: 28px; padding: 0 10px; gap: 6px; }
+.btn-sm svg { width: 14px; height: 14px; }
+.icon-btn.icon-btn-lg { width: 32px; height: 32px; border-radius: var(--radius); border-color: var(--line-strong); background: var(--raised); color: var(--text); }
+.icon-btn.icon-btn-lg:hover { background: #2b2824; border-color: #57514a; }
+.icon-btn.icon-btn-lg svg { width: 18px; height: 18px; }
+.btn-primary { background: var(--safelight); border-color: var(--safelight); color: var(--safelight-ink); font-weight: 600; }
+.btn-primary:hover { background: #f7b45c; border-color: #f7b45c; }
+.btn-fixer { background: transparent; border-color: var(--fixer); color: var(--fixer); }
+.btn-fixer:hover { background: var(--fixer-soft); border-color: var(--fixer); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn-ghost:hover { background: var(--raised); color: var(--text); border-color: transparent; }
+.icon-btn {
+  width: 28px; height: 28px; padding: 0;
+  display: inline-grid; place-items: center;
+  border-radius: 5px; border: 1px solid transparent;
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.icon-btn:hover { background: var(--raised); color: var(--text); border-color: var(--line); }
+.icon-btn svg { width: 15px; height: 15px; }
+.icon-btn.danger:hover { color: var(--bad); }
+:focus-visible { outline: 2px solid var(--safelight); outline-offset: 2px; }
+
+/* ---------- workspace ---------- */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, var(--left, 50%)) 7px minmax(0, 1fr);
+  min-height: 0;
+}
+.pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+.pane-bar {
+  display: flex; align-items: center; gap: 10px;
+  height: 40px; padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  min-width: 0;
+}
+.pane-bar .meta { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pane-bar .spacer { flex: 1; }
+.pane-body { position: relative; overflow: hidden; background: var(--sunken); min-height: 0; }
+.pane-body::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 0 2px transparent;
+  transition: box-shadow .2s;
+  z-index: 5;
+}
+.pane-body.is-expecting::after { box-shadow: inset 0 0 0 2px var(--safelight); }
+
+.splitter {
+  cursor: col-resize; background: var(--panel);
+  border-inline: 1px solid var(--line);
+  position: relative; touch-action: none;
+}
+.splitter::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 1px; height: 36px; transform: translate(-50%, -50%);
+  background: var(--line-strong); box-shadow: -2px 0 0 var(--line-strong), 2px 0 0 var(--line-strong);
+}
+.splitter:hover, .splitter.is-dragging { background: var(--raised); }
+.hsplitter {
+  cursor: row-resize; background: var(--panel);
+  border-block: 1px solid var(--line);
+  position: relative; touch-action: none;
+}
+.hsplitter::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 36px; height: 1px; transform: translate(-50%, -50%);
+  background: var(--line-strong); box-shadow: 0 -2px 0 var(--line-strong), 0 2px 0 var(--line-strong);
+}
+.hsplitter:hover, .hsplitter.is-dragging { background: var(--raised); }
+#sceneMarkers { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; }
+
+/* photo pane */
+#photoCanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+#photoCanvas.is-panning { cursor: grabbing; }
+#photoCanvas.is-over-marker { cursor: move; }
+#loupe {
+  position: absolute; top: 12px; left: 12px;
+  width: 240px; height: 240px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  pointer-events: none; z-index: 4;
+  background: var(--sunken);
+}
+#loupe.is-right { left: auto; right: 12px; }
+.bar-sep { width: 1px; height: 18px; background: var(--line); margin-inline: 2px; }
+.zoom-readout { font: 500 11.5px var(--font-mono); color: var(--muted); min-width: 46px; text-align: center; }
+
+.dropzone {
+  position: absolute; inset: 18px;
+  display: grid; place-items: center; text-align: center;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 10px;
+  padding: 24px;
+  transition: border-color .15s, background .15s;
+}
+.dropzone.is-over { border-color: var(--safelight); background: var(--safelight-soft); }
+.dropzone-inner { max-width: 360px; display: grid; gap: 14px; justify-items: center; }
+.dropzone h2 {
+  margin: 0;
+  font-size: 26px; font-weight: 750; font-stretch: 112%;
+  letter-spacing: -0.01em; line-height: 1.1;
+  text-wrap: balance;
+}
+.dropzone p { margin: 0; color: var(--muted); font-size: var(--fs-md); text-wrap: pretty; }
+.dropzone .print {
+  width: 116px; height: 84px; border-radius: 3px;
+  background: linear-gradient(160deg, #5b4c3a, #2c241b);
+  border: 6px solid #e9e1d1;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  transform: rotate(-4deg);
+  position: relative; overflow: hidden;
+}
+.dropzone .print::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    linear-gradient(transparent 58%, rgba(0,0,0,.25) 58%),
+    linear-gradient(90deg, transparent 18%, rgba(233,225,209,.18) 18% 30%, transparent 30% 62%, rgba(233,225,209,.12) 62% 78%, transparent 78%);
+}
+.dropzone .print i {
+  position: absolute; width: 9px; height: 9px; border-radius: 50%;
+  border: 2px solid var(--safelight); background: rgba(0,0,0,.3);
+}
+
+.hint {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(18, 17, 16, .86);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line-strong);
+  font-size: var(--fs-sm);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  z-index: 6; pointer-events: none;
+}
+.hint.is-active { border-color: var(--safelight); color: var(--text); }
+.hint kbd {
+  font: 500 10.5px var(--font-mono);
+  padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--line-strong); color: var(--muted);
+}
+.hint .num { font-family: var(--font-mono); font-weight: 600; color: var(--safelight); }
+
+/* scene pane */
+#viewDiv { position: absolute; inset: 0; }
+#viewDiv.is-placing canvas { cursor: crosshair !important; }
+.overlay-wrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
+#overlayImg { position: absolute; transform-origin: 0 0; max-width: none; opacity: .55; image-rendering: auto; }
+.scene-banner {
+  position: absolute; top: 12px; left: 12px; right: 64px;
+  max-width: 380px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(25, 24, 22, .94);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  z-index: 5;
+  display: grid; gap: 8px;
+  font-size: var(--fs-sm);
+}
+.scene-banner p { margin: 0; color: var(--muted); }
+.scene-banner strong { color: var(--text); font-weight: 600; }
+.scene-banner .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.scene-banner.is-error { border-color: var(--bad); }
+.camera-hud {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: grid; gap: 8px;
+  padding: 10px 12px 12px 14px;
+  border-radius: 10px;
+  background: rgba(18, 17, 16, .92);
+  border: 1px solid var(--fixer);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  z-index: 7;
+  font-size: var(--fs-sm);
+  width: max-content;
+  max-width: calc(100% - 24px);
+}
+.camera-hud .tag { color: var(--fixer); font-weight: 600; }
+.hud-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.hud-head kbd { font: 500 10px var(--font-mono); opacity: .7; margin-left: 4px; }
+.hud-controls { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.hud-ctl { display: flex; align-items: center; gap: 10px; color: var(--muted); white-space: nowrap; }
+.hud-ctl label { color: var(--muted); }
+.hud-val { min-width: 40px; text-align: right; color: var(--text); font-size: 11.5px; }
+.info-dot {
+  width: 16px; height: 16px; padding: 0; margin-left: -4px;
+  display: inline-grid; place-items: center;
+  border-radius: 50%; border: 1px solid var(--line-strong); background: transparent;
+  font: 600 10px/1 var(--font-mono); color: var(--muted); cursor: pointer;
+}
+.info-dot:hover, .info-dot[aria-expanded="true"] { color: var(--fixer); border-color: var(--fixer); }
+.hud-info {
+  max-width: 420px; padding: 8px 10px; border-radius: 6px;
+  background: var(--fixer-soft); border: 1px solid rgba(124,200,218,.35);
+  color: var(--text); font-size: 12px; line-height: 1.45; white-space: normal;
+}
+/* slim range: thin track, solid cyan knob with a dark ring */
+input[type=range].slim { -webkit-appearance: none; appearance: none; width: 130px; height: 18px; background: transparent; margin: 0; cursor: pointer; }
+input[type=range].slim::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, rgba(124,200,218,.55) var(--fill, 0%), var(--line-strong) var(--fill, 0%)); }
+input[type=range].slim::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line-strong); }
+input[type=range].slim::-moz-range-progress { height: 4px; border-radius: 2px; background: rgba(124,200,218,.55); }
+input[type=range].slim::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; margin-top: -5.5px; border-radius: 50%; background: var(--fixer); border: 3px solid var(--panel); box-shadow: 0 0 0 1px rgba(124,200,218,.45); }
+input[type=range].slim::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: var(--fixer); border: 3px solid var(--panel); box-shadow: 0 0 0 1px rgba(124,200,218,.45); }
+input[type=range].slim:hover::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--fixer), 0 0 0 5px var(--fixer-soft); }
+input[type=range].slim:hover::-moz-range-thumb { box-shadow: 0 0 0 1px var(--fixer), 0 0 0 5px var(--fixer-soft); }
+input[type=range].slim:focus-visible { outline: none; }
+input[type=range].slim:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--fixer), 0 0 0 5px var(--fixer-soft); }
+
+select.select {
+  height: 28px; padding: 0 26px 0 10px;
+  border-radius: 5px; border: 1px solid var(--line-strong);
+  background: var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a0978a' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center;
+  appearance: none; font-size: var(--fs-sm); cursor: pointer;
+}
+
+/* ---------- dock ---------- */
+.dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  min-height: 0;
+  background: var(--panel);
+}
+.panel { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+.panel + .panel { border-left: 1px solid var(--line); }
+.panel-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  min-height: 44px; padding: 6px 10px 6px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-title { font-size: var(--fs-lg); font-weight: 700; font-stretch: 110%; letter-spacing: -0.005em; }
+.panel-head .spacer { flex: 1; }
+.panel-body { overflow: auto; min-height: 0; }
+.count { font: 500 12px var(--font-mono); color: var(--muted); }
+
+/* points table */
+.ptable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.ptable th {
+  position: sticky; top: 0; z-index: 1; width: 1%;
+  background: var(--panel);
+  text-align: left; font-weight: 600;
+  font-size: 10.5px; font-stretch: 75%; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--faint);
+  padding: 8px 14px; border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.ptable td { padding: 5px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; width: 1%; }
+.ptable td.coord { font-size: 12px; }
+/* data columns hug their content; the empty fill column takes the spare width */
+.ptable .c-fill { padding: 0; }
+/* gaps between the photo, scene and fit groups grow with the panel, up to a cap;
+   the fill before the row buttons takes whatever is left, so it stays the widest */
+.ptable .c-gap { width: 5%; padding: 0; }
+.ptable .c-fill { width: 12%; }
+@media (max-width: 1440px) {
+  .ptable th, .ptable td { padding-left: 10px; padding-right: 10px; }
+  .ptable .c-gap { padding: 0; }
+}
+.ptable .c-id { padding-left: 16px; }
+.ptable .c-actions { padding-right: 12px; }
+.ptable thead tr.grp th { height: 26px; padding-top: 8px; padding-bottom: 2px; border-bottom: 0; }
+.ptable thead tr.grp th.g { color: var(--muted); box-shadow: inset 0 -1px 0 var(--line-strong); text-align: center; }
+.ptable thead tr.sub th { top: 26px; box-shadow: inset 0 -1px 0 var(--line); border-bottom: 0; }
+.ptable .c-use { text-align: center; }
+.ptable td.num, .ptable th.num { text-align: right; }
+.ptable tbody tr { cursor: pointer; }
+.ptable tbody tr:hover { background: rgba(255,255,255,.025); }
+.ptable tbody tr.is-selected { background: var(--safelight-soft); }
+.ptable tbody tr.is-off td:not(:first-child):not(:last-child) { opacity: .45; }
+.ptable .c-id { width: 1%; }
+.ptable .c-actions { width: 1%; text-align: right; }
+.pid {
+  display: inline-grid; place-items: center;
+  min-width: 24px; height: 20px; padding: 0 5px;
+  border-radius: 10px;
+  font: 600 11px var(--font-mono);
+  background: var(--safelight); color: var(--safelight-ink);
+}
+.pid.is-pending { background: transparent; color: var(--safelight); box-shadow: inset 0 0 0 1.5px var(--safelight); }
+.pid.is-off { background: var(--line-strong); color: var(--muted); }
+.pid.is-suspect { background: var(--bad); color: #1f0a06; }
+.missing { color: var(--faint); font-style: italic; font-family: var(--font-ui); }
+.missing.is-next { color: var(--safelight); font-style: normal; }
+.coord { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+.coord .dim { color: var(--faint); }
+.resid { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.resid .bar { width: 46px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.resid .bar i { display: block; height: 100%; background: var(--fixer); border-radius: 3px; }
+.resid.is-suspect { color: var(--bad); }
+.resid.is-suspect .bar i { background: var(--bad); }
+.use-toggle { accent-color: var(--safelight); width: 15px; height: 15px; cursor: pointer; vertical-align: middle; }
+.row-actions { display: inline-flex; gap: 2px; }
+.empty-table { padding: 22px 18px; color: var(--muted); display: grid; gap: 10px; }
+.empty-table ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.empty-table li::marker { color: var(--safelight); font-family: var(--font-mono); font-size: 12px; }
+
+/* solution */
+.switch { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; user-select: none; }
+/* Switches take the accent of where they live: safelight amber for the photo,
+   scene and layer controls, fixer cyan inside the Camera panel. Off is a hollow
+   track with a dim knob, so the two states differ in shape as well as color. */
+.switch { --switch-on: var(--safelight); --switch-knob: var(--safelight-ink); }
+.switch.is-fixer { --switch-on: var(--fixer); --switch-knob: var(--sunken); }
+.switch input {
+  appearance: none; flex: none;
+  width: 30px; height: 17px; border-radius: 9px; margin: 0;
+  background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  position: relative; cursor: pointer;
+}
+.switch input::after {
+  content: ""; position: absolute; top: 3.5px; left: 3.5px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--faint);
+  transition: transform .15s, width .15s, height .15s, top .15s, left .15s;
+}
+.switch input:checked { background: var(--switch-on); box-shadow: none; }
+.switch input:checked::after { top: 2px; left: 2px; width: 13px; height: 13px; transform: translateX(13px); background: var(--switch-knob); }
+.switch:hover input:not(:checked) { box-shadow: inset 0 0 0 1.5px var(--muted); }
+.switch:hover input:not(:checked)::after { background: var(--muted); }
+.switch:has(input:checked) { color: var(--text); }
+.switch:hover { color: var(--text); }
+
+
+.sol { padding: 14px 16px 16px; display: grid; gap: 14px; align-content: start; }
+.quality { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
+.quality .q { display: grid; gap: 1px; }
+.quality .q b { font: 600 16px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.quality .q b small { font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 9px; border-radius: 11px;
+  font-size: 11.5px; font-weight: 600;
+  background: var(--raised); color: var(--muted);
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.is-ok { color: var(--fixer); border-color: rgba(124,200,218,.4); background: var(--fixer-soft); }
+.pill.is-warn { color: var(--safelight); border-color: rgba(242,165,65,.4); background: var(--safelight-soft); }
+.pill.is-bad { color: var(--bad); border-color: rgba(239,107,85,.4); background: var(--bad-soft); }
+.pill.is-busy::before { animation: blink 0.8s infinite alternate; }
+@keyframes blink { to { opacity: .2; } }
+
+.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.group { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; display: grid; gap: 8px; align-content: start; background: var(--bg); }
+.group .label { color: var(--fixer); }
+.ro { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 10px; }
+.ro dt { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
+.ro dd { margin: 0; text-align: right; font: 500 13.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ro dd small { display: block; font-size: 10.5px; color: var(--faint); font-weight: 400; }
+.ro dd .unit { color: var(--muted); font-size: 11px; margin-left: 2px; }
+.ro .sub { grid-column: 1 / -1; font: 11px var(--font-mono); color: var(--faint); text-align: right; }
+
+.warn {
+  border: 1px solid rgba(242,165,65,.4); background: var(--safelight-soft);
+  border-radius: 8px; padding: 10px 12px;
+  font-size: var(--fs-sm); display: grid; gap: 4px;
+}
+.warn strong { color: var(--safelight); font-weight: 600; }
+.warn.is-bad { border-color: rgba(239,107,85,.45); background: var(--bad-soft); }
+.warn.is-bad strong { color: var(--bad); }
+.sol-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sol-note { font-size: 11.5px; color: var(--faint); margin: 0; }
+
+.progress { display: grid; gap: 10px; }
+.segs { display: flex; gap: 4px; }
+.segs i { flex: 1; height: 6px; border-radius: 3px; background: var(--line-strong); }
+.segs i.on { background: var(--safelight); }
+.segs i.extra { background: var(--fixer); }
+.progress p { margin: 0; color: var(--muted); font-size: var(--fs-sm); text-wrap: pretty; }
+.progress p strong { color: var(--text); font-weight: 600; }
+.tips { margin: 0; padding-left: 18px; color: var(--muted); font-size: var(--fs-sm); display: grid; gap: 3px; }
+
+/* ---------- modal & toast ---------- */
+.modal-back {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(8, 7, 6, .62);
+  display: grid; place-items: center;
+  padding: 16px;
+}
+.modal {
+  width: min(520px, 100%);
+  max-height: calc(100% - 32px); overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.6);
+  display: grid; gap: 16px;
+  padding: 20px 20px 18px;
+}
+.modal h3 { margin: 0; font-size: 19px; font-weight: 750; font-stretch: 112%; }
+.modal p { margin: 0; color: var(--muted); font-size: var(--fs-sm); text-wrap: pretty; }
+.field { display: grid; gap: 6px; }
+.field input, .field textarea {
+  width: 100%;
+  border-radius: 6px; border: 1px solid var(--line-strong);
+  background: var(--sunken);
+  padding: 8px 10px;
+  font: 13px var(--font-mono);
+}
+.field textarea { min-height: 170px; resize: vertical; }
+.field input:focus, .field textarea:focus { border-color: var(--safelight); outline: none; }
+.field .help { font-size: 11.5px; color: var(--faint); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.modal .err { color: var(--bad); font-size: var(--fs-sm); }
+.modal.is-wide { width: min(860px, 100%); gap: 18px; padding: 22px 24px 24px; }
+.help-example {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 12px 14px; border-radius: 8px;
+  border: 1px solid rgba(242,165,65,.4); background: var(--safelight-soft);
+}
+.help-example > div { flex: 1; min-width: 220px; display: grid; gap: 2px; font-size: var(--fs-sm); color: var(--muted); }
+.help-example b { color: var(--text); font-weight: 600; font-size: var(--fs-md); }
+.help-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.help-head h3 { font-size: 22px; }
+.help-lede { font-size: var(--fs-md) !important; color: var(--text) !important; }
+.help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 28px; }
+.help-sec { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.help-sec h4 {
+  margin: 0; font-size: var(--fs-xs); font-stretch: 75%; font-weight: 600;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--safelight);
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.help-sec ul, .help-sec ol { margin: 0; padding-left: 18px; display: grid; gap: 5px; font-size: var(--fs-sm); color: var(--muted); }
+.help-sec li b { color: var(--text); font-weight: 600; }
+.help-sec em { font-style: normal; color: var(--text); }
+.help-steps li::marker { color: var(--safelight); font: 600 12px var(--font-mono); }
+.help-sec kbd, .keys kbd {
+  font: 500 10.5px var(--font-mono); padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--line-strong); color: var(--text); background: var(--raised);
+}
+.keys { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: var(--fs-sm); color: var(--muted); align-items: baseline; }
+.keys dt { white-space: nowrap; }
+.keys dd { margin: 0; }
+.t-fixer { color: var(--fixer); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.sw-amber { background: var(--safelight); }
+.sw-dash { border: 1.5px dashed var(--safelight); }
+.sw-red { background: var(--bad); }
+.sw-grey { background: var(--faint); }
+.layer-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.layer-list li { display: flex; align-items: center; gap: 10px; padding: 9px 8px 9px 12px; min-width: 0; }
+.layer-list li + li { border-top: 1px solid var(--line); }
+.layer-list .lname { flex: 1; min-width: 0; display: grid; }
+.layer-list .lname b { font-weight: 600; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer-list .lname span { font-size: 11.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer-list .lstate { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.layer-list .lstate.is-bad { color: var(--bad); }
+.add-row { display: flex; gap: 8px; }
+.add-row input { flex: 1; min-width: 0; }
+.lname-input {
+  width: 100%; margin-left: -5px; padding: 1px 4px;
+  border: 1px solid transparent; border-radius: 4px; background: transparent;
+  font: 600 var(--fs-md) var(--font-ui); color: var(--text);
+}
+.lname-input:hover { border-color: var(--line-strong); }
+.lname-input:focus { border-color: var(--safelight); background: var(--sunken); outline: none; }
+.layer-list .lname .lproblem { color: var(--bad); white-space: normal; overflow: visible; font-size: 11.5px; line-height: 1.35; }
+.layer-list li.has-problem { background: var(--bad-soft); }
+
+.toast {
+  /* sits over the working panels, just below their bars, where the eye already is */
+  position: fixed; left: 50%; top: 112px; transform: translate(-50%, -8px);
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px; border-radius: 8px;
+  background: var(--text); color: var(--bg);
+  font-size: var(--fs-sm); font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  opacity: 0; pointer-events: none;
+  transition: opacity .18s, transform .18s;
+  z-index: 60;
+  max-width: min(560px, calc(100% - 32px));
+}
+.toast svg { width: 18px; height: 18px; flex: none; }
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+.toast.is-bad { background: var(--bad); color: #1f0a06; font-size: var(--fs-md); padding: 12px 18px; pointer-events: auto; cursor: pointer; }
+
+/* ArcGIS widget tweaks */
+.esri-view .esri-view-surface--inset-outline:focus::after { outline: none !important; }
+.esri-ui-corner .esri-component { box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  html, body { height: auto; }
+  .app { height: auto; grid-template-rows: auto auto auto; }
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 62vh 0 62vh; }
+  .splitter, .hsplitter { display: none; }
+  .pane + .splitter + .pane { border-top: 1px solid var(--line); }
+  .dock { grid-template-columns: minmax(0, 1fr); }
+  .panel + .panel { border-left: 0; border-top: 1px solid var(--line); }
+  .panel-body { max-height: 70vh; }
+  .steps { display: none; }
+  .topbar { flex-wrap: wrap; }
+  .top-actions { margin-left: auto; }
+  .brand-sub { display: none; }
+}
+@media (max-width: 560px) {
+  .pane-bar .btn-sm span { display: none; }
+  .pane-bar .btn-sm { padding: 0 8px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 30 22" aria-hidden="true">
+        <path d="M4 11 L25 2 M4 11 L25 20" stroke="#7cc8da" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+        <rect x="23" y="1" width="4" height="20" rx="1" fill="#ece6db"/>
+        <circle cx="4" cy="11" r="3.4" fill="#f2a541"/>
+      </svg>
+      <div>
+        <div class="brand-name">Standpoint</div>
+        <div class="brand-sub">Where was this photo taken?</div>
+      </div>
+    </div>
+
+    <nav class="steps" id="steps" aria-label="Progress">
+      <div class="step" data-step="photo"><span class="step-dot">1</span>Photo</div>
+      <span class="step-sep"></span>
+      <div class="step" data-step="pairs"><span class="step-dot">2</span>Point pairs <b id="stepPairs"></b></div>
+      <span class="step-sep"></span>
+      <div class="step" data-step="camera"><span class="step-dot">3</span>Camera</div>
+    </nav>
+
+    <div class="top-actions">
+      <button class="icon-btn icon-btn-lg" id="btnHelp" type="button" title="How Standpoint works (?)" aria-label="Help">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 7.2v5"/><circle cx="8" cy="4" r="1" fill="currentColor" stroke="none"/></svg>
+      </button>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <!-- PHOTO -->
+    <section class="pane" aria-label="Photograph">
+      <div class="pane-bar">
+        <span class="label">Photo</span>
+        <span class="meta" id="photoMeta">No photo loaded</span>
+        <span class="spacer"></span>
+        <label class="switch" title="Show an enlarged view of the area under the cursor (M)"><input type="checkbox" id="optLoupe" checked>Magnifier</label>
+        <span class="bar-sep" aria-hidden="true"></span>
+        <button class="icon-btn" id="zoomOut" type="button" title="Zoom out (−)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8h9"/></svg></button>
+        <span class="zoom-readout" id="zoomReadout">–</span>
+        <button class="icon-btn" id="zoomIn" type="button" title="Zoom in (+)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
+        <button class="icon-btn" id="zoomFit" type="button" title="Fit to pane (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/></svg></button>
+        <span class="bar-sep" aria-hidden="true"></span>
+        <button class="btn btn-sm" id="btnOpen" type="button" title="Open a photograph">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1.3"/><path d="M2 12l4-3.5 3 2.5 2.5-2 3 2.5"/></svg>
+          <span>Open photo</span>
+        </button>
+      </div>
+      <div class="pane-body" id="photoBody">
+        <canvas id="photoCanvas"></canvas>
+        <canvas id="loupe" width="240" height="240" hidden></canvas>
+        <div class="dropzone" id="dropzone">
+          <div class="dropzone-inner">
+            <div class="print" aria-hidden="true"><i style="left:22px;top:20px"></i><i style="left:64px;top:36px"></i><i style="left:40px;top:50px"></i></div>
+            <h2>Bring a photograph</h2>
+            <p>Drop an image here, paste it, or choose a file. Views with recognizable buildings work best.</p>
+            <button class="btn btn-primary" id="btnOpen2" type="button">Choose photo</button>
+          </div>
+        </div>
+        <div class="hint" id="photoHint" hidden></div>
+      </div>
+    </section>
+
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize panes" tabindex="0"></div>
+
+    <!-- SCENE -->
+    <section class="pane" aria-label="3D scene">
+      <div class="pane-bar">
+        <span class="label">Scene</span>
+        <span class="meta mono" title="Coordinate system of picked points">EPSG:3857</span>
+        <span class="meta" id="layerMeta">Loading 3D mesh…</span>
+        <span class="spacer"></span>
+        <label class="switch" title="Draw points that the mesh hides from this viewpoint at half strength"><input type="checkbox" id="optDim" checked>Dim hidden points</label>
+        <span class="bar-sep" aria-hidden="true"></span>
+        <button class="btn btn-sm" id="btnLayer" type="button" title="Show and add scene layers">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.8 14 5 8 8.2 2 5z"/><path d="M2 8l6 3.2L14 8"/><path d="M2 11l6 3.2 6-3.2"/></svg>
+          <span>Layers</span>
+        </button>
+      </div>
+      <div class="pane-body" id="sceneBody">
+        <div id="viewDiv"></div>
+        <canvas id="sceneMarkers"></canvas>
+        <div class="overlay-wrap" id="overlayWrap" hidden><img id="overlayImg" alt=""></div>
+        <div class="scene-banner" id="sceneBanner" hidden></div>
+        <div class="camera-hud" id="cameraHud" hidden>
+          <div class="hud-head">
+            <span class="tag">Through the solved camera</span>
+            <button class="btn btn-ghost btn-sm" id="btnExitCamera" type="button">Exit <kbd>Esc</kbd></button>
+          </div>
+          <div class="hud-controls">
+            <div class="hud-ctl">
+              <label for="overlayOpacity">Photo opacity</label>
+              <input type="range" class="slim" id="overlayOpacity" min="0" max="100" value="55">
+              <span class="hud-val mono" id="opacityValue">55%</span>
+            </div>
+            <div class="hud-ctl">
+              <label for="clipRadius">Clip mesh</label>
+              <button class="info-dot" type="button" id="clipInfoBtn" aria-expanded="false" aria-controls="clipInfo" title="What does this do?">i</button>
+              <input type="range" class="slim" id="clipRadius" min="0" max="100" step="1" value="0">
+              <span class="hud-val mono" id="clipValue">off</span>
+            </div>
+          </div>
+          <div class="hud-info" id="clipInfo" role="note" hidden>
+            Removes the mesh within this distance around the camera, so walls or a window frame enclosing the camera spot don't block the view. It cuts a vertical cylinder, so use the smallest radius that clears the view. The mesh comes back when you exit.
+          </div>
+        </div>
+        <div class="hint" id="sceneHint" hidden></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="hsplitter" id="dockSplitter" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom panels" tabindex="0" title="Drag to resize · double-click to reset"></div>
+
+  <!-- DOCK -->
+  <section class="dock">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Point pairs</span>
+        <span class="count" id="pairCount">0</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" id="btnImport" type="button" title="Paste points you saved earlier">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2.8" width="10" height="11.7" rx="1.5"/><rect x="5.8" y="1.4" width="4.4" height="2.8" rx=".9"/><path d="M5.8 8.2h4.4M5.8 10.8h2.8"/></svg>Paste points
+        </button>
+        <button class="btn btn-ghost" id="btnCopyCsv" type="button" title="Copy all point pairs as CSV">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg>Copy CSV
+        </button>
+        <button class="btn btn-ghost" id="btnClear" type="button" title="Remove all point pairs">Clear</button>
+      </div>
+      <div class="panel-body" id="tableWrap"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Camera</span>
+        <span class="pill" id="solPill">Waiting</span>
+        <span class="spacer"></span>
+        <label class="switch is-fixer" title="Normally the camera looks through the exact middle of the photo. Turn on if the photo is cropped or shot with a shift lens, so the solver finds the true optical center. Needs 10+ well-spread pairs."><input type="checkbox" id="optPP">Free image center</label>
+        <label class="switch is-fixer" title="Corrects barrel or pincushion distortion that bends straight lines, common with wide-angle lenses. Turn on if errors grow toward the photo edges. Needs pairs near the edges."><input type="checkbox" id="optK1">Lens distortion</label>
+      </div>
+      <div class="panel-body" id="solWrap"></div>
+    </div>
+  </section>
+</div>
+
+<!-- Layers modal -->
+<div class="modal-back" id="layerModal" hidden>
+  <form class="modal" id="layerForm" autocomplete="off">
+    <h3>Layers</h3>
+    <ul class="layer-list" id="layerList"></ul>
+    <div class="field">
+      <label class="label" for="layerSrc">Add a layer</label>
+      <input id="layerSrc" placeholder="Layer URL or ArcGIS Online item ID">
+      <div class="add-row">
+        <input id="layerName" placeholder="Name (optional)" spellcheck="false">
+        <button class="btn btn-primary" type="submit" id="btnAddLayer">Add</button>
+      </div>
+      <span class="help">Any ArcGIS layer works: scene, feature, map image, tile, vector tile, imagery, WMS or WMTS service, or a web scene item. Elevation layers become the ground. Tiled layers must be cut in Web Mercator (EPSG:3857) to appear in this 3D scene. Non-public items ask you to sign in. Click a layer's name in the list to rename it.</span>
+    </div>
+    <div class="err" id="layerErr" hidden></div>
+    <div class="modal-actions">
+      <button class="btn" type="button" data-close>Done</button>
+    </div>
+  </form>
+</div>
+
+<!-- Help modal -->
+<div class="modal-back" id="helpModal" hidden>
+  <div class="modal is-wide" role="dialog" aria-labelledby="helpTitle">
+    <div class="help-head">
+      <h3 id="helpTitle">How Standpoint works</h3>
+      <button class="icon-btn" type="button" data-close title="Close (Esc)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    </div>
+    <p class="help-lede">Standpoint finds where a photograph was taken from and how the camera was pointed. You match features in the photo with the same features on the 3D mesh, and it solves the camera position, viewing direction and lens from those pairs.</p>
+    <div class="help-example">
+      <div><b>Try the example</b><span>Loads a sample photo with its point pairs, so you see a solved camera right away.</span></div>
+      <button class="btn btn-primary" type="button" id="btnExample">Load example</button>
+    </div>
+
+    <section class="help-sec">
+      <h4>The workflow</h4>
+      <ol class="help-steps">
+        <li><b>Open a photo.</b> Drop it on the photo panel, paste it, or use <em>Open photo</em> in the photo panel's bar.</li>
+        <li><b>Pair points.</b> Click a sharp feature in the photo, then the same feature on the mesh, or the other way round. The panel waiting for your click gets an amber outline and a prompt at the bottom.</li>
+        <li><b>Read the camera.</b> From 5 pairs the camera is solved automatically and updates with every change. More well-spread pairs make it more precise and let you catch mistakes.</li>
+      </ol>
+    </section>
+
+    <div class="help-grid">
+      <section class="help-sec">
+        <h4>Photo panel</h4>
+        <ul>
+          <li>Click to add a point. Drag a marker to adjust it.</li>
+          <li>Drag the empty photo to pan, scroll to zoom. <em>Fit</em> shows the whole photo.</li>
+          <li><em>Magnifier</em> shows an enlarged view under the cursor for exact placing.</li>
+          <li><span class="sw sw-amber"></span>paired point · <span class="sw sw-dash"></span>waiting for its scene position · <span class="sw sw-red"></span>suspect · <span class="sw sw-grey"></span>switched off.</li>
+          <li>Once solved, a <span class="t-fixer">cyan line</span> runs from each marker to where the solved camera puts its 3D point. A <span class="t-fixer">dashed cyan ring</span> shows where a point placed only in the scene should be in the photo.</li>
+        </ul>
+      </section>
+      <section class="help-sec">
+        <h4>Scene panel</h4>
+        <ul>
+          <li>Click on the mesh to place a point. Clicks outside the mesh are refused.</li>
+          <li>Drag to pan, right-drag to orbit, scroll to zoom. The buttons at the top right switch drag between pan and rotate.</li>
+          <li>Click a marker to select its pair.</li>
+          <li><em>Dim hidden points</em> draws points the mesh covers from your viewpoint at half strength.</li>
+          <li>Once solved, the <span class="t-fixer">cyan pyramid</span> shows the camera position and what it saw. Its thick edge is the top of the photo.</li>
+        </ul>
+      </section>
+      <section class="help-sec">
+        <h4>Layers</h4>
+        <ul>
+          <li>The Prague 3D mesh is built in. <em>Layers</em> in the scene panel's bar lets you hide it and add others.</li>
+          <li>Add any ArcGIS layer by URL or item ID, with an optional name. Click a name in the list to rename it.</li>
+          <li>Elevation layers become the ground, so clicks outside the mesh get heights.</li>
+          <li>The scene is in Web Mercator (EPSG:3857). Tiled layers must be cut in EPSG:3857 to appear. The list flags any that are not.</li>
+        </ul>
+      </section>
+      <section class="help-sec">
+        <h4>Point pairs</h4>
+        <ul>
+          <li><b>Residual</b> is how far, in photo pixels, the solved camera misses that pair. A red value means the pair fits much worse than the rest; it may be matched to the wrong feature.</li>
+          <li><b>Use</b> leaves a pair out of the solution without deleting it.</li>
+          <li>Row buttons: place again in the photo, place again in the scene, show in both views, delete.</li>
+          <li><em>Copy CSV</em> copies the pairs. <em>Paste points</em> loads pairs you saved earlier, as CSV or JSON. <em>Clear</em> removes all.</li>
+          <li>Only the coordinates and the Use flag are read from pasted data. Residuals and camera values in it are ignored and always recalculated.</li>
+        </ul>
+      </section>
+      <section class="help-sec">
+        <h4>Camera</h4>
+        <ul>
+          <li><b>RMS error</b> is the typical miss in pixels. <b>σ₀</b> is the same corrected for the number of unknowns. <b>Redundancy</b> counts the extra measurements beyond the minimum.</li>
+          <li><b>±</b> values are one standard deviation. They shrink as you add well-spread pairs.</li>
+          <li><em>Free image center</em> solves the optical center too, for cropped photos or shift lenses. Needs 10+ pairs.</li>
+          <li><em>Lens distortion</em> corrects lines bent by the lens. Turn it on if errors grow toward the photo edges.</li>
+          <li>Keep an option only if it clearly lowers the RMS error.</li>
+        </ul>
+      </section>
+      <section class="help-sec">
+        <h4>View from camera</h4>
+        <ul>
+          <li>Moves the scene to the solved camera: same position, heading, tilt and field of view. Then it lays the photo over it.</li>
+          <li>If the solution is right, the buildings in the scene line up with the photo. Use the opacity slider to compare.</li>
+          <li>A photo is often taken from a window or a spot the mesh encloses. <em>Clip mesh</em> removes the mesh within the chosen radius around the camera so it does not block the view.</li>
+          <li>Navigation is locked while the photo is shown. <em>Exit</em> or <kbd>Esc</kbd> returns you to your previous view.</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="help-grid">
+      <section class="help-sec">
+        <h4>Photos that work</h4>
+        <ul>
+          <li>Ordinary camera photographs, taken from one spot through one lens: digital photos, film negatives, prints, postcards and their scans.</li>
+          <li>Cropped photos work with <em>Free image center</em>. A rotated scan is fine; the roll angle absorbs it.</li>
+          <li><b>Not suitable:</b> orthophotos and other rectified images, maps and plans, stitched panoramas and 360° images, strong fisheye lenses, photomontages, images stretched in one direction, and photos of a print taken at an angle.</li>
+          <li>Features that still exist unchanged are the best points. Rebuilt or altered buildings give misleading pairs.</li>
+        </ul>
+      </section>
+      <section class="help-sec">
+        <h4>Privacy</h4>
+        <ul>
+          <li>Your photo and point pairs stay in this browser. The app never uploads them anywhere; the solving runs locally.</li>
+          <li>The app does download things: the ArcGIS map library, fonts, and the tiles of the layers you view. Those servers learn which area you are looking at, not what you loaded or clicked.</li>
+          <li>Nothing is stored. Reloading the page resets the photo, points, added layers and all settings to their defaults.</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="help-grid">
+      <section class="help-sec">
+        <h4>Keyboard</h4>
+        <dl class="keys">
+          <dt><kbd>Esc</kbd></dt><dd>Cancel re-placing, discard a half-placed point, leave camera view, close a dialog</dd>
+          <dt><kbd>Delete</kbd></dt><dd>Delete the selected pair</dd>
+          <dt><kbd>F</kbd></dt><dd>Fit the photo to its panel</dd>
+          <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom the photo</dd>
+          <dt><kbd>M</kbd></dt><dd>Magnifier on or off</dd>
+          <dt><kbd>?</kbd></dt><dd>This help</dd>
+        </dl>
+      </section>
+      <section class="help-sec">
+        <h4>Coordinates and saving</h4>
+        <ul>
+          <li>Photo <b>u, v</b> are pixels from the top-left corner, v pointing down.</li>
+          <li>Scene <b>X, Y</b> are EPSG:3857, <b>Z</b> is meters in the mesh's height system. The camera is solved in a local metric frame and converted back.</li>
+          <li>Heading is clockwise from true north. Tilt follows ArcGIS: 0° looks straight down, 90° at the horizon. Pitch is tilt − 90°. Positive roll means the photo is rotated clockwise against a level camera.</li>
+          <li>Point pairs are not saved. Use <em>Copy everything</em> or <em>Copy CSV</em>, and <em>Paste points</em> to continue later.</li>
+          <li>The example loads from the <b>example</b> folder next to the app: <b>example.jpg</b> and <b>example.txt</b> (points as CSV or JSON).</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Import modal -->
+<div class="modal-back" id="importModal" hidden>
+  <form class="modal" id="importForm" autocomplete="off">
+    <h3>Paste points</h3>
+    <p>Paste the JSON from <em>Copy everything</em>, or CSV with the columns <span class="mono">id,u,v,x,y,z</span> (optional <span class="mono">enabled</span>). Pasted points replace the current list. Residuals and camera values in the pasted text are ignored and recalculated.</p>
+    <div class="field">
+      <label class="label" for="importText">Points</label>
+      <textarea id="importText" spellcheck="false" placeholder="id,u,v,x,y,z&#10;1,1523.4,880.2,1605282.74,6461373.72,231.4"></textarea>
+    </div>
+    <div class="err" id="importErr" hidden></div>
+    <div class="modal-actions">
+      <button class="btn" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Replace points</button>
+    </div>
+  </form>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal-back" id="confirmModal" hidden>
+  <div class="modal" role="dialog" aria-labelledby="confirmTitle">
+    <h3 id="confirmTitle"></h3>
+    <p id="confirmText"></p>
+    <div class="modal-actions" id="confirmActions"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* Standpoint camera solver
+ * Single-image camera resection: position, orientation, focal length
+ * (+ optional principal point and radial distortion k1) from
+ * photo ↔ world point pairs. Least squares over all points.
+ *
+ * Input world points are EPSG:3857 (x, y) + height z in meters.
+ * Web Mercator is not metric (scale ≈ 1/cos φ), so everything is solved
+ * in a local East-North-Up frame (meters) centered on the points.
+ */
+const Solver = (() => {
+  const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+  const A_WGS = 6378137, F_WGS = 1 / 298.257223563, E2 = F_WGS * (2 - F_WGS);
+  const R_MERC = 6378137;
+
+  // ---------- small vector helpers ----------
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => Math.hypot(a[0], a[1], a[2]);
+  const unit = (a) => mul(a, 1 / norm(a));
+
+  // ---------- geodesy ----------
+  function mercToLonLat(x, y) {
+    return [x / R_MERC * R2D, (2 * Math.atan(Math.exp(y / R_MERC)) - Math.PI / 2) * R2D];
+  }
+  function lonLatToMerc(lon, lat) {
+    return [lon * D2R * R_MERC, R_MERC * Math.log(Math.tan(Math.PI / 4 + lat * D2R / 2))];
+  }
+  function geodToEcef(lon, lat, h) {
+    const l = lon * D2R, p = lat * D2R, s = Math.sin(p), c = Math.cos(p);
+    const N = A_WGS / Math.sqrt(1 - E2 * s * s);
+    return [(N + h) * c * Math.cos(l), (N + h) * c * Math.sin(l), (N * (1 - E2) + h) * s];
+  }
+  function ecefToGeod(X) {
+    const [x, y, z] = X;
+    const lon = Math.atan2(y, x), p = Math.hypot(x, y);
+    let lat = Math.atan2(z, p * (1 - E2)), h = 0;
+    for (let i = 0; i < 10; i++) {
+      const s = Math.sin(lat), N = A_WGS / Math.sqrt(1 - E2 * s * s);
+      h = p / Math.cos(lat) - N;
+      lat = Math.atan2(z, p * (1 - E2 * N / (N + h)));
+    }
+    return [lon * R2D, lat * R2D, h];
+  }
+  function enuFrame(lon, lat, h) {
+    const l = lon * D2R, p = lat * D2R;
+    const sl = Math.sin(l), cl = Math.cos(l), sp = Math.sin(p), cp = Math.cos(p);
+    return { o: geodToEcef(lon, lat, h), e: [-sl, cl, 0], n: [-sp * cl, -sp * sl, cp], u: [cp * cl, cp * sl, sp] };
+  }
+  const ecefToEnu = (F, X) => { const d = sub(X, F.o); return [dot(d, F.e), dot(d, F.n), dot(d, F.u)]; };
+  const enuVecToEcef = (F, v) => add(add(mul(F.e, v[0]), mul(F.n, v[1])), mul(F.u, v[2]));
+  const enuToEcef = (F, v) => add(F.o, enuVecToEcef(F, v));
+  const ecefVecToEnu = (F, v) => [dot(v, F.e), dot(v, F.n), dot(v, F.u)];
+
+  // ---------- camera model ----------
+  // Angles: heading h (clockwise from north), tilt t (0 = straight down,
+  // 90° = horizon, ArcGIS convention), roll ρ (positive = image content
+  // rotated clockwise relative to a level camera).
+  // Camera axes in world: r (image right), dn (image down), d (forward).
+  function axes(h, t, rho) {
+    const sh = Math.sin(h), ch = Math.cos(h), st = Math.sin(t), ct = Math.cos(t);
+    const d = [sh * st, ch * st, -ct];
+    const r0 = [ch, -sh, 0];
+    const dn0 = cross(d, r0);
+    const c = Math.cos(rho), s = Math.sin(rho);
+    return [add(mul(r0, c), mul(dn0, s)), add(mul(r0, -s), mul(dn0, c)), d];
+  }
+  function anglesFromAxes(r, d) {
+    const h = Math.atan2(d[0], d[1]);
+    const t = Math.acos(Math.max(-1, Math.min(1, -d[2])));
+    const r0 = [Math.cos(h), -Math.sin(h), 0];
+    const dn0 = cross(d, r0);
+    const rho = Math.atan2(dot(r, dn0), dot(r, r0));
+    return [h, t, rho];
+  }
+
+  // Full parameter vector (always 10 long):
+  // 0-2 camera center E,N,U | 3 heading | 4 tilt | 5 roll | 6 f | 7 cx | 8 cy | 9 k1
+  function projectP(p, P) {
+    const [r, dn, d] = axes(p[3], p[4], p[5]);
+    const q = [P[0] - p[0], P[1] - p[1], P[2] - p[2]];
+    const z = dot(q, d);
+    const xn = dot(q, r) / z, yn = dot(q, dn) / z;
+    const fac = 1 + p[9] * (xn * xn + yn * yn);
+    return [p[7] + p[6] * xn * fac, p[8] + p[6] * yn * fac, z];
+  }
+
+  // ---------- linear algebra ----------
+  function solveLinear(A, b) { // Gaussian elimination, partial pivoting. A n×n (array of rows)
+    const n = b.length, M = A.map((row, i) => [...row, b[i]]);
+    for (let c = 0; c < n; c++) {
+      let piv = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+      if (Math.abs(M[piv][c]) < 1e-300) return null;
+      [M[c], M[piv]] = [M[piv], M[c]];
+      for (let r = c + 1; r < n; r++) {
+        const f = M[r][c] / M[c][c];
+        if (f) for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+      }
+    }
+    const x = new Array(n);
+    for (let r = n - 1; r >= 0; r--) {
+      let s = M[r][n];
+      for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k];
+      x[r] = s / M[r][r];
+    }
+    return x;
+  }
+  function invert(A) {
+    const n = A.length, inv = [];
+    for (let j = 0; j < n; j++) {
+      const e = new Array(n).fill(0); e[j] = 1;
+      const col = solveLinear(A, e);
+      if (!col) return null;
+      inv.push(col);
+    }
+    return inv[0].map((_, i) => inv.map(col => col[i])); // transpose columns → rows
+  }
+  function jacobiEigen(S) { // symmetric matrix → {values, vectors (columns)}
+    const n = S.length, A = S.map(r => r.slice());
+    const V = A.map((_, i) => A.map((__, j) => (i === j ? 1 : 0)));
+    for (let sweep = 0; sweep < 100; sweep++) {
+      let off = 0;
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) off += A[i][j] * A[i][j];
+      if (off < 1e-30) break;
+      for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) {
+        if (Math.abs(A[p][q]) < 1e-300) continue;
+        const theta = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+        const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+        const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+        for (let k = 0; k < n; k++) {
+          const akp = A[k][p], akq = A[k][q];
+          A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq;
+        }
+        for (let k = 0; k < n; k++) {
+          const apk = A[p][k], aqk = A[q][k];
+          A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk;
+        }
+        for (let k = 0; k < n; k++) {
+          const vkp = V[k][p], vkq = V[k][q];
+          V[k][p] = c * vkp - s * vkq; V[k][q] = s * vkp + c * vkq;
+        }
+      }
+    }
+    return { values: A.map((r, i) => r[i]), vectors: V };
+  }
+
+  // ---------- Levenberg–Marquardt ----------
+  function lm(resFn, p0, steps, maxIter) {
+    let p = p0.slice(), r = resFn(p), cost = sumSq(r), lambda = 1e-3;
+    const n = p.length;
+    for (let it = 0; it < maxIter; it++) {
+      const J = jacobian(resFn, p, steps);
+      const { A, g } = normalEq(J, r, n);
+      let improved = false;
+      for (let inner = 0; inner < 12; inner++) {
+        const Ad = A.map((row, i) => row.map((v, j) => (i === j ? v + lambda * Math.max(v, 1e-12) : v)));
+        const delta = solveLinear(Ad, g.map(v => -v));
+        if (!delta || delta.some(v => !isFinite(v))) { lambda *= 10; continue; }
+        const pn = p.map((v, i) => v + delta[i]);
+        const rn = resFn(pn), cn = sumSq(rn);
+        if (cn < cost) {
+          const rel = (cost - cn) / Math.max(cost, 1e-30);
+          p = pn; r = rn; cost = cn; lambda = Math.max(lambda / 10, 1e-12); improved = true;
+          if (rel < 1e-12) return { p, r, cost };
+          break;
+        }
+        lambda *= 10;
+        if (lambda > 1e14) break;
+      }
+      if (!improved) break;
+    }
+    return { p, r, cost };
+  }
+  function jacobian(resFn, p, steps) {
+    const cols = [];
+    for (let j = 0; j < p.length; j++) {
+      const h = steps[j];
+      const pp = p.slice(), pm = p.slice();
+      pp[j] += h; pm[j] -= h;
+      const rp = resFn(pp), rm = resFn(pm);
+      cols.push(rp.map((v, i) => (v - rm[i]) / (2 * h)));
+    }
+    return cols; // column-major: cols[j][i]
+  }
+  function normalEq(J, r, n) {
+    const A = [], g = [];
+    for (let a = 0; a < n; a++) {
+      A.push(new Array(n));
+      let s = 0; for (let i = 0; i < r.length; i++) s += J[a][i] * r[i];
+      g.push(s);
+    }
+    for (let a = 0; a < n; a++) for (let b = a; b < n; b++) {
+      let s = 0; const ja = J[a], jb = J[b];
+      for (let i = 0; i < ja.length; i++) s += ja[i] * jb[i];
+      A[a][b] = A[b][a] = s;
+    }
+    return { A, g };
+  }
+  const sumSq = (r) => { let s = 0; for (const v of r) s += v * v; return s; };
+
+  // ---------- DLT initial estimate ----------
+  function dlt(P, uv) {
+    const n = P.length;
+    if (n < 6) return null;
+    // normalization
+    const cw = [0, 0, 0], ci = [0, 0];
+    P.forEach(p => { cw[0] += p[0] / n; cw[1] += p[1] / n; cw[2] += p[2] / n; });
+    uv.forEach(q => { ci[0] += q[0] / n; ci[1] += q[1] / n; });
+    let sw = 0, si = 0;
+    P.forEach(p => sw += norm(sub(p, cw)) / n);
+    uv.forEach(q => si += Math.hypot(q[0] - ci[0], q[1] - ci[1]) / n);
+    if (sw < 1e-9 || si < 1e-9) return null;
+    sw = Math.sqrt(3) / sw; si = Math.SQRT2 / si;
+    const M = Array.from({ length: 12 }, () => new Array(12).fill(0));
+    for (let i = 0; i < n; i++) {
+      const X = [(P[i][0] - cw[0]) * sw, (P[i][1] - cw[1]) * sw, (P[i][2] - cw[2]) * sw, 1];
+      const u = (uv[i][0] - ci[0]) * si, v = (uv[i][1] - ci[1]) * si;
+      const r1 = [...X, 0, 0, 0, 0, ...X.map(x => -u * x)];
+      const r2 = [0, 0, 0, 0, ...X, ...X.map(x => -v * x)];
+      for (const row of [r1, r2]) for (let a = 0; a < 12; a++) for (let b = 0; b < 12; b++) M[a][b] += row[a] * row[b];
+    }
+    const { values, vectors } = jacobiEigen(M);
+    let k = 0; values.forEach((v, i) => { if (v < values[k]) k = i; });
+    const h = vectors.map(row => row[k]);
+    // un-normalize: P = Ti^-1 · Pn · Tw
+    const Pn = [h.slice(0, 4), h.slice(4, 8), h.slice(8, 12)];
+    const Tw = [[sw, 0, 0, -sw * cw[0]], [0, sw, 0, -sw * cw[1]], [0, 0, sw, -sw * cw[2]], [0, 0, 0, 1]];
+    const Tiinv = [[1 / si, 0, ci[0]], [0, 1 / si, ci[1]], [0, 0, 1]];
+    const PT = Pn.map(row => [0, 1, 2, 3].map(c => row.reduce((s, v, i) => s + v * Tw[i][c], 0)));
+    let Pm = Tiinv.map(row => [0, 1, 2, 3].map(c => row.reduce((s, v, i) => s + v * PT[i][c], 0)));
+    // sign: points in front
+    let m3 = Pm[2].slice(0, 3);
+    const s3 = 1 / norm(m3);
+    Pm = Pm.map(row => row.map(v => v * s3));
+    const depth0 = Pm[2][0] * P[0][0] + Pm[2][1] * P[0][1] + Pm[2][2] * P[0][2] + Pm[2][3];
+    if (depth0 < 0) Pm = Pm.map(row => row.map(v => -v));
+    const m1 = Pm[0].slice(0, 3), m2 = Pm[1].slice(0, 3); m3 = Pm[2].slice(0, 3);
+    const cx = dot(m1, m3), cy = dot(m2, m3);
+    const fx = norm(cross(m1, m3)), fy = norm(cross(m2, m3));
+    const r1 = mul(sub(m1, mul(m3, cx)), 1 / fx);
+    const r2 = mul(sub(m2, mul(m3, cy)), 1 / fy);
+    // det check: r1 × r2 should be +m3 for a right-handed camera
+    if (dot(cross(r1, r2), m3) < 0) return null;
+    const M3 = [m1, m2, m3], p4 = [Pm[0][3], Pm[1][3], Pm[2][3]];
+    const C = solveLinear(M3, p4.map(v => -v));
+    if (!C) return null;
+    const [hh, tt, rr] = anglesFromAxes(unit(r1), unit(m3));
+    const f = (fx + fy) / 2;
+    if (!isFinite(f) || f <= 0) return null;
+    return { C, h: hh, t: tt, rho: rr, f, cx, cy };
+  }
+
+  // ---------- main entry ----------
+  function minPoints(opts) {
+    const p = 7 + (opts.freePP ? 2 : 0) + (opts.k1 ? 1 : 0);
+    return Math.max(5, Math.ceil((p + 1) / 2) + 1);
+  }
+
+  /**
+   * obs: [{id, u, v, x, y, z}] with x,y in EPSG:3857 and z in meters.
+   * img: {w, h}. opts: {freePP, k1}
+   */
+  function solve(obs, img, opts = {}) {
+    const n = obs.length;
+    const need = minPoints(opts);
+    if (n < need) return { ok: false, reason: 'too-few', need };
+
+    // local metric frame at the centroid
+    const geo = obs.map(o => { const [lon, lat] = mercToLonLat(o.x, o.y); return [lon, lat, o.z]; });
+    const c = geo.reduce((a, g) => [a[0] + g[0] / n, a[1] + g[1] / n, a[2] + g[2] / n], [0, 0, 0]);
+    const F = enuFrame(c[0], c[1], c[2]);
+    const P = geo.map(g => ecefToEnu(F, geodToEcef(g[0], g[1], g[2])));
+    const uv = obs.map(o => [o.u, o.v]);
+    const W = img.w, H = img.h;
+
+    const BEHIND = 0.5;
+    // plausible lenses: diagonal field of view between ~0.5° and ~160°
+    const diag = Math.hypot(W, H);
+    const F_MIN = diag / 2 / Math.tan(80 * D2R), F_MAX = diag / 2 / Math.tan(0.25 * D2R);
+    const all = obs.map((_, i) => i);
+    const residualsFor = (sel) => (p) => {
+      const r = new Array(2 * sel.length);
+      const badLens = !(p[6] > F_MIN && p[6] < F_MAX) || Math.abs(p[9]) > 1;
+      sel.forEach((i, j) => {
+        const [u, v, z] = projectP(p, P[i]);
+        if (badLens || !(z > BEHIND) || !isFinite(u) || !isFinite(v)) {
+          const pen = 1e4 + 1e3 * Math.max(0, BEHIND - z);
+          r[2 * j] = pen; r[2 * j + 1] = pen;
+        } else { r[2 * j] = u - uv[i][0]; r[2 * j + 1] = v - uv[i][1]; }
+      });
+      return r;
+    };
+    const residualsFull = residualsFor(all);
+    // the coarse search over many starts only needs a spread-out subset
+    const SUB = 16;
+    const subset = n <= SUB ? all : Array.from({ length: SUB }, (_, k) => Math.floor(k * n / SUB));
+    const residualsSub = residualsFor(subset);
+    // optimize a subset of the 10 parameters
+    const makeSub = (mask, base, resFn = residualsFull) => {
+      const idx = mask.map((m, i) => (m ? i : -1)).filter(i => i >= 0);
+      const expand = (q) => { const p = base.slice(); idx.forEach((k, j) => { p[k] = q[j]; }); return p; };
+      return { idx, expand, fn: (q) => resFn(expand(q)) };
+    };
+    const extent = Math.max(20, ...P.map(p => Math.hypot(p[0], p[1])));
+    const stepFor = (k, f) => [1e-3, 1e-3, 1e-3, 1e-6, 1e-6, 1e-6, Math.max(1e-3, f * 1e-6), 1e-3, 1e-3, 1e-7][k];
+
+    const baseMask = [1, 1, 1, 1, 1, 1, 1, 0, 0, 0];
+    const runLM = (p0, mask, iters, resFn) => {
+      const { idx, expand, fn } = makeSub(mask, p0, resFn);
+      const steps = idx.map(k => stepFor(k, p0[6]));
+      const res = lm(fn, idx.map(k => p0[k]), steps, iters);
+      return { p: expand(res.p), cost: res.cost };
+    };
+
+    // starting points
+    const starts = [];
+    const lookAt = (C) => {
+      const d = unit(sub([0, 0, 0], C));
+      return [Math.atan2(d[0], d[1]), Math.acos(Math.max(-1, Math.min(1, -d[2])))];
+    };
+    const zmin = Math.min(...P.map(p => p[2]));
+    for (let a = 0; a < 12; a++) {
+      const az = a * 30 * D2R;
+      for (const df of [1.2, 2.5, 5]) {
+        const dist = extent * df;
+        for (const hz of [zmin + 1.7, 0.35 * dist]) {
+          const C = [Math.sin(az) * dist, Math.cos(az) * dist, hz];
+          const [hh, tt] = lookAt(C);
+          for (const hfov of [45, 70]) {
+            const f = (W / 2) / Math.tan(hfov * D2R / 2);
+            starts.push([C[0], C[1], C[2], hh, tt, 0, f, W / 2, H / 2, 0]);
+          }
+        }
+      }
+    }
+    const d0 = dlt(P, uv);
+    if (d0) starts.unshift([d0.C[0], d0.C[1], d0.C[2], d0.h, d0.t, d0.rho, d0.f, W / 2, H / 2, 0]);
+
+    // stage 1: quick refinement of every start, keep the best few
+    const quick = starts.map(s => runLM(s, baseMask, 25, residualsSub)).sort((a, b) => a.cost - b.cost);
+    let best = null;
+    for (const cand of quick.slice(0, 8)) {
+      const full = runLM(cand.p, baseMask, 200);
+      if (!best || full.cost < best.cost) best = full;
+    }
+    // stage 2: free the optional parameters
+    const fullMask = [1, 1, 1, 1, 1, 1, 1, opts.freePP ? 1 : 0, opts.freePP ? 1 : 0, opts.k1 ? 1 : 0];
+    if (opts.freePP || opts.k1) {
+      const ext = runLM(best.p, fullMask, 300);
+      if (ext.cost <= best.cost) best = ext;
+    }
+    const p = best.p;
+
+    // quality
+    const proj = P.map(Pi => projectP(p, Pi));
+    const behind = proj.some(q => !(q[2] > BEHIND));
+    const res = obs.map((o, i) => ({ id: o.id, du: proj[i][0] - o.u, dv: proj[i][1] - o.v, pu: proj[i][0], pv: proj[i][1], depth: proj[i][2] }));
+    res.forEach(r => { r.err = Math.hypot(r.du, r.dv); });
+    const sse = res.reduce((s, r) => s + r.err * r.err, 0);
+    const { idx, fn } = makeSub(fullMask, p);
+    const nPar = idx.length;
+    const dof = 2 * n - nPar;
+    const sigma0 = dof > 0 ? Math.sqrt(sse / dof) : NaN;
+    const rms = Math.sqrt(sse / n);
+    let std = null;
+    if (dof > 0 && !behind) {
+      const J = jacobian(fn, idx.map(k => p[k]), idx.map(k => stepFor(k, p[6])));
+      const { A } = normalEq(J, fn(idx.map(k => p[k])), nPar);
+      const inv = invert(A);
+      if (inv) {
+        std = {};
+        const names = ['E', 'N', 'U', 'heading', 'tilt', 'roll', 'f', 'cx', 'cy', 'k1'];
+        idx.forEach((k, j) => {
+          let s = sigma0 * Math.sqrt(Math.max(0, inv[j][j]));
+          if (k >= 3 && k <= 5) s *= R2D;
+          std[names[k]] = s;
+        });
+      }
+    }
+    const limit = Math.max(2, 2.5 * rms);
+    res.forEach(r => { r.suspect = n > need && r.err > limit; });
+
+    // geometry warnings
+    const warnings = [];
+    if (p[6] < F_MIN * 1.05 || p[6] > F_MAX * 0.95) warnings.push('lens-limit');
+    const medDepth = res.map(r => r.depth).sort((a, b) => a - b)[Math.floor(n / 2)];
+    if (std && Math.hypot(std.E, std.N, std.U) > 0.1 * medDepth) warnings.push('weak-geometry');
+    const depths0 = res.map(r => r.depth);
+    if (Math.max(...depths0) < 1.4 * Math.min(...depths0)) warnings.push('flat-depth');
+
+    // convert pose back to geographic + camera-local angles
+    const Cecef = enuToEcef(F, p.slice(0, 3));
+    const [clon, clat, ch] = ecefToGeod(Cecef);
+    const [mx, my] = lonLatToMerc(clon, clat);
+    const Fc = enuFrame(clon, clat, ch);
+    const [r0, dn0, d0v] = axes(p[3], p[4], p[5]);
+    const toCam = (v) => ecefVecToEnu(Fc, enuVecToEcef(F, v));
+    const [hC, tC, rhoC] = anglesFromAxes(toCam(r0), toCam(d0v));
+    const f = p[6], cx = p[7], cy = p[8];
+    const hfov = (Math.atan(cx / f) + Math.atan((W - cx) / f)) * R2D;
+    const vfov = (Math.atan(cy / f) + Math.atan((H - cy) / f)) * R2D;
+    const dfov = 2 * Math.atan(Math.hypot(W, H) / 2 / f) * R2D;
+    const f35 = f * 43.2666 / Math.hypot(W, H);
+
+    // frustum (in EPSG:3857 + z) for drawing in the scene
+    const depths = res.map(r => r.depth).sort((a, b) => a - b);
+    const L = Math.max(5, depths[Math.floor(depths.length / 2)] || 20);
+    const toMerc = (enu) => { const g = ecefToGeod(enuToEcef(F, enu)); const m = lonLatToMerc(g[0], g[1]); return [m[0], m[1], g[2]]; };
+    const corner = (u, v) => {
+      const xn = (u - cx) / f, yn = (v - cy) / f;
+      const dir = add(add(mul(r0, xn), mul(dn0, yn)), d0v);
+      return toMerc(add(p.slice(0, 3), mul(dir, L)));
+    };
+    const frustum = { apex: [mx, my, ch], corners: [corner(0, 0), corner(W, 0), corner(W, H), corner(0, H)] };
+
+    return {
+      ok: !behind,
+      reason: behind ? 'behind' : null,
+      n, nPar, dof, need,
+      rms, sigma0, std, residuals: res, warnings, medDepth,
+      camera: {
+        x: mx, y: my, z: ch, lon: clon, lat: clat,
+        heading: ((hC * R2D) % 360 + 360) % 360,
+        tilt: tC * R2D,
+        pitch: tC * R2D - 90,
+        roll: rhoC * R2D,
+        f, cx, cy, k1: p[9],
+        hfov, vfov, dfov, f35,
+      },
+      frustum,
+      _internal: { F, p },
+    };
+  }
+
+  // project an EPSG:3857 point into the photo with a solved camera
+  function projectWorld(sol, x, y, z) {
+    const { F, p } = sol._internal;
+    const [lon, lat] = mercToLonLat(x, y);
+    const P = ecefToEnu(F, geodToEcef(lon, lat, z));
+    const [u, v, d] = projectP(p, P);
+    return d > 0 ? [u, v] : null;
+  }
+
+  return { solve, projectWorld, minPoints, mercToLonLat, lonLatToMerc, _test: { axes, projectP, enuFrame, geodToEcef, ecefToEnu, dlt } };
+})();
+</script>
+<script src="https://js.arcgis.com/4.33/"></script>
+<script>
+(() => {
+'use strict';
+const $ = (s) => document.querySelector(s);
+const R2D = 180 / Math.PI;
+const COLORS = { safelight: '#f2a541', fixer: '#7cc8da', bad: '#ef6b55', off: '#6d665c', ink: '#121110', text: '#ece6db' };
+// Nothing is remembered between visits. Remove anything earlier versions stored.
+try { Object.keys(localStorage).filter(k => k.startsWith('standpoint.')).forEach(k => localStorage.removeItem(k)); } catch { /* storage unavailable */ }
+
+// ======================================================================
+// state
+// ======================================================================
+const state = {
+  img: null, imgURL: null, imgName: '', W: 0, H: 0,
+  pv: { scale: 1, tx: 0, ty: 0 },
+  points: [], nextId: 1,
+  selected: null,
+  repick: null,            // {id, side: 'photo' | 'scene'}
+  opts: { freePP: false, k1: false },
+  sol: null, solving: false,
+  cameraMode: false,
+  dimHidden: true,
+  loupe: true,
+  hover: null,             // screen [x, y] over photo
+};
+
+const isComplete = (p) => p.u != null && p.x != null;
+const activePoints = () => state.points.filter(p => isComplete(p) && p.enabled);
+const byId = (id) => state.points.find(p => p.id === id);
+
+function pendingFor(side) {
+  if (state.repick && state.repick.side === side) return byId(state.repick.id) || null;
+  for (let i = state.points.length - 1; i >= 0; i--) {
+    const p = state.points[i];
+    if (side === 'photo' ? (p.u == null && p.x != null) : (p.x == null && p.u != null)) return p;
+  }
+  return null;
+}
+const solved = () => !!(state.sol && state.sol.ok && state.sol.camera);
+
+// ======================================================================
+// utilities
+// ======================================================================
+const fmt = (n, d = 2) => (n == null || !isFinite(n)) ? '–' : n.toFixed(d);
+let toastTimer;
+const WARN_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.8 15 14H1z" stroke-linejoin="round"/><path d="M8 6v3.6"/><circle cx="8" cy="11.7" r=".5" fill="currentColor" stroke="none"/></svg>';
+function toast(msg, bad = false) {
+  const t = $('#toast');
+  t.innerHTML = (bad ? WARN_ICON : '') + `<span>${escapeHtml(msg)}</span>`;
+  t.title = bad ? 'Click to dismiss' : '';
+  t.classList.toggle('is-bad', bad);
+  t.classList.add('is-on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('is-on'), bad ? 6500 : 2400);
+}
+$('#toast').addEventListener('click', () => $('#toast').classList.remove('is-on'));
+async function copyText(text, msg) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(msg);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    toast(ok ? msg : 'Copy was blocked by the browser', !ok);
+  }
+}
+function openModal(id) { $(id).hidden = false; const f = $(id).querySelector('input, textarea, button.btn-primary'); if (f) setTimeout(() => f.focus(), 30); }
+function closeModal(id) { $(id).hidden = true; }
+document.querySelectorAll('.modal-back').forEach(m => {
+  m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) m.hidden = true; });
+});
+function confirmBox(title, text, actions) {
+  $('#confirmTitle').textContent = title;
+  $('#confirmText').textContent = text;
+  const box = $('#confirmActions'); box.innerHTML = '';
+  actions.forEach(a => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn ' + (a.cls || ''); b.textContent = a.label;
+    b.onclick = () => { closeModal('#confirmModal'); a.run && a.run(); };
+    box.appendChild(b);
+  });
+  openModal('#confirmModal');
+}
+
+// ======================================================================
+// photo loading
+// ======================================================================
+function openImage(blob, name, keep) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      if (state.imgURL) URL.revokeObjectURL(state.imgURL);
+      state.img = img; state.imgURL = url; state.imgName = name;
+      state.W = img.naturalWidth; state.H = img.naturalHeight;
+      if (!keep) { state.points = []; state.nextId = 1; state.selected = null; state.repick = null; }
+      $('#overlayImg').src = url;
+      $('#dropzone').hidden = true;
+      $('#photoMeta').textContent = `${state.imgName} · ${state.W} × ${state.H} px`;
+      $('#photoMeta').title = $('#photoMeta').textContent;
+      exitCameraMode();
+      resizeCanvas(); fitPhoto();
+      changed();
+      resolve();
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('This image could not be opened')); };
+    img.src = url;
+  });
+}
+function loadPhotoFile(file) {
+  if (!file || !file.type.startsWith('image/')) { toast('That file is not an image', true); return; }
+  const go = (keep) => openImage(file, file.name || 'pasted image', keep).catch(err => toast(err.message, true));
+  if (state.points.length) {
+    confirmBox('Replace the photo?', `You have ${state.points.length} point pair${state.points.length > 1 ? 's' : ''}. Their photo positions belong to the current image.`, [
+      { label: 'Cancel' },
+      { label: 'Keep points', run: () => go(true) },
+      { label: 'Start fresh', cls: 'btn-primary', run: () => go(false) },
+    ]);
+  } else go(false);
+}
+// example/example.jpg + example/example.txt next to the app
+async function loadExample() {
+  closeModal('#helpModal');
+  let blob, text;
+  try {
+    const [ir, tr] = await Promise.all([fetch('example/example.jpg'), fetch('example/example.txt')]);
+    if (!ir.ok || !tr.ok) throw new Error('missing');
+    [blob, text] = await Promise.all([ir.blob(), tr.text()]);
+  } catch {
+    toast(location.protocol === 'file:'
+      ? 'The example needs the app opened through a web server (http://…), not as a file.'
+      : 'The example was not found. Put example.jpg and example.txt in an "example" folder next to the app.', true);
+    return;
+  }
+  let pts;
+  try { pts = parseImport(text); } catch (err) { toast(`example.txt: ${err.message}`, true); return; }
+  try { await openImage(blob, 'example.jpg', false); } catch (err) { toast(`example.jpg: ${err.message}`, true); return; }
+  state.points = pts; state.nextId = Math.max(0, ...pts.map(p => p.id)) + 1;
+  changed();
+  scene.goToPoints(pts);
+  toast(`Example loaded with ${pts.length} point pairs`);
+}
+$('#btnExample').onclick = () => {
+  if (!state.points.length) { loadExample(); return; }
+  closeModal('#helpModal');
+  confirmBox('Load the example?', `It replaces the current photo and your ${state.points.length} point pair${state.points.length > 1 ? 's' : ''}. Copy them first if you want to keep them.`, [
+    { label: 'Cancel' },
+    { label: 'Load example', cls: 'btn-primary', run: loadExample },
+  ]);
+};
+$('#btnOpen').onclick = $('#btnOpen2').onclick = () => $('#fileInput').click();
+$('#btnHelp').onclick = () => openModal('#helpModal');
+$('#fileInput').onchange = (e) => { loadPhotoFile(e.target.files[0]); e.target.value = ''; };
+const photoBody = $('#photoBody');
+['dragenter', 'dragover'].forEach(t => photoBody.addEventListener(t, (e) => { e.preventDefault(); $('#dropzone').classList.add('is-over'); }));
+['dragleave', 'drop'].forEach(t => photoBody.addEventListener(t, (e) => { e.preventDefault(); $('#dropzone').classList.remove('is-over'); }));
+photoBody.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) loadPhotoFile(f); });
+document.addEventListener('paste', (e) => {
+  if (e.target.closest('input, textarea')) return;
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) { e.preventDefault(); loadPhotoFile(item.getAsFile()); }
+});
+
+// ======================================================================
+// photo canvas: pan, zoom, markers, loupe
+// ======================================================================
+const canvas = $('#photoCanvas');
+const ctx = canvas.getContext('2d');
+const loupe = $('#loupe');
+const lctx = loupe.getContext('2d');
+const LOUPE = 240; // magnifier size in CSS pixels
+let cw = 0, ch = 0;
+
+function resizeCanvas() {
+  const r = photoBody.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const oldW = cw, oldH = ch;
+  cw = r.width; ch = r.height;
+  canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  // keep the same image point in the center
+  if (oldW && state.img) { state.pv.tx += (cw - oldW) / 2; state.pv.ty += (ch - oldH) / 2; }
+  const ld = Math.round(LOUPE * dpr);
+  if (loupe.width !== ld) { loupe.width = ld; loupe.height = ld; }
+  drawPhoto();
+}
+new ResizeObserver(resizeCanvas).observe(photoBody);
+
+function fitPhoto() {
+  if (!state.img) return;
+  const s = Math.min(cw / state.W, ch / state.H) * 0.94;
+  state.pv = { scale: s, tx: (cw - state.W * s) / 2, ty: (ch - state.H * s) / 2 };
+  drawPhoto();
+}
+const toScreen = (u, v) => [state.pv.tx + u * state.pv.scale, state.pv.ty + v * state.pv.scale];
+const toImage = (x, y) => [(x - state.pv.tx) / state.pv.scale, (y - state.pv.ty) / state.pv.scale];
+const insideImage = (u, v) => u >= 0 && v >= 0 && u <= state.W && v <= state.H;
+
+function zoomAt(factor, sx = cw / 2, sy = ch / 2) {
+  if (!state.img) return;
+  const fit = Math.min(cw / state.W, ch / state.H);
+  const s = Math.min(Math.max(state.pv.scale * factor, fit * 0.3), 48);
+  const [u, v] = toImage(sx, sy);
+  state.pv.scale = s;
+  state.pv.tx = sx - u * s; state.pv.ty = sy - v * s;
+  drawPhoto();
+}
+$('#zoomIn').onclick = () => zoomAt(1.5);
+$('#zoomOut').onclick = () => zoomAt(1 / 1.5);
+$('#zoomFit').onclick = fitPhoto;
+
+function pointColor(p, res) {
+  if (!p.enabled) return COLORS.off;
+  if (res && res.suspect) return COLORS.bad;
+  return COLORS.safelight;
+}
+
+function drawMarker(g, x, y, p, color, { selected, pending, occluded = false, scale = 1 }) {
+  const r = 8 * scale;
+  g.save();
+  if (occluded) g.globalAlpha = 0.5;
+  g.lineCap = 'round';
+  // dark halo for legibility on any print
+  g.strokeStyle = 'rgba(10,9,8,.85)'; g.lineWidth = 4 * scale;
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = color; g.lineWidth = 1.7 * scale;
+  if (pending) g.setLineDash([3 * scale, 2.5 * scale]);
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+  g.setLineDash([]);
+  // crosshair ticks outside the ring, center left clear so the feature stays visible
+  const t0 = r + 2 * scale, t1 = r + 6 * scale;
+  g.strokeStyle = 'rgba(10,9,8,.85)'; g.lineWidth = 3.4 * scale;
+  g.beginPath();
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { g.moveTo(x + dx * t0, y + dy * t0); g.lineTo(x + dx * t1, y + dy * t1); }
+  g.stroke();
+  g.strokeStyle = color; g.lineWidth = 1.5 * scale;
+  g.beginPath();
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { g.moveTo(x + dx * t0, y + dy * t0); g.lineTo(x + dx * t1, y + dy * t1); }
+  g.stroke();
+  g.fillStyle = color;
+  g.beginPath(); g.arc(x, y, 1.1 * scale, 0, Math.PI * 2); g.fill();
+  if (selected) {
+    g.strokeStyle = COLORS.text; g.lineWidth = 1.2 * scale;
+    g.beginPath(); g.arc(x, y, r + 9 * scale, 0, Math.PI * 2); g.stroke();
+  }
+  // id label
+  if (p) {
+    const label = String(p.id);
+    g.font = `600 ${10.5 * scale}px "JetBrains Mono", monospace`;
+    const w = g.measureText(label).width + 8 * scale, h = 15 * scale;
+    const lx = x + r + 5 * scale, ly = y - r - h + 1 * scale;
+    g.fillStyle = pending ? 'rgba(10,9,8,.85)' : color;
+    g.beginPath(); g.roundRect ? g.roundRect(lx, ly, w, h, 3 * scale) : g.rect(lx, ly, w, h); g.fill();
+    if (pending) { g.strokeStyle = color; g.lineWidth = 1; g.stroke(); }
+    g.fillStyle = pending ? color : '#1d1305';
+    g.textBaseline = 'middle';
+    g.fillText(label, lx + 4 * scale, ly + h / 2 + 0.5);
+  }
+  g.restore();
+}
+
+function drawGhost(g, x, y, label, scale = 1) {
+  g.save();
+  g.strokeStyle = COLORS.fixer; g.lineWidth = 1.5 * scale;
+  g.setLineDash([4 * scale, 3 * scale]);
+  g.beginPath(); g.arc(x, y, 14 * scale, 0, Math.PI * 2); g.stroke();
+  g.setLineDash([]);
+  g.font = `600 ${10.5 * scale}px "JetBrains Mono", monospace`;
+  const tw = g.measureText(label).width;
+  const lx = x + 18 * scale + tw > cw - 6 ? x - 18 * scale - tw : x + 18 * scale;
+  g.fillStyle = 'rgba(10,9,8,.8)';
+  g.fillRect(lx - 3, y - 8, tw + 6, 16);
+  g.fillStyle = COLORS.fixer; g.textBaseline = 'middle';
+  g.fillText(label, lx, y);
+  g.restore();
+}
+
+function residualMap() {
+  const m = new Map();
+  if (state.sol && state.sol.residuals) state.sol.residuals.forEach(r => m.set(r.id, r));
+  return m;
+}
+
+function drawPhoto() {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  updateZoomReadout();
+  if (!state.img) { loupe.hidden = true; return; }
+  const { scale, tx, ty } = state.pv;
+  ctx.imageSmoothingEnabled = scale < 3;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(state.img, tx, ty, state.W * scale, state.H * scale);
+  // frame
+  ctx.strokeStyle = 'rgba(236,230,219,.18)'; ctx.lineWidth = 1;
+  ctx.strokeRect(tx - 0.5, ty - 0.5, state.W * scale + 1, state.H * scale + 1);
+
+  const res = residualMap();
+  const sol = solved() ? state.sol : null;
+
+  // residual vectors: measured → where the solved camera puts the 3D point
+  if (sol) {
+    ctx.save();
+    ctx.strokeStyle = COLORS.fixer; ctx.lineWidth = 1.4;
+    for (const p of state.points) {
+      const r = res.get(p.id); if (!r || !p.enabled) continue;
+      const [ax, ay] = toScreen(p.u, p.v), [bx, by] = toScreen(r.pu, r.pv);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx - 4, by); ctx.lineTo(bx + 4, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.stroke();
+    }
+    ctx.restore();
+    // where scene-only points should appear
+    for (const p of state.points) {
+      if (p.u != null || p.x == null) continue;
+      const q = Solver.projectWorld(sol, p.x, p.y, p.z);
+      if (q && insideImage(q[0], q[1])) { const [x, y] = toScreen(q[0], q[1]); drawGhost(ctx, x, y, 'expected ' + p.id); }
+    }
+  }
+  for (const p of state.points) {
+    if (p.u == null) continue;
+    const [x, y] = toScreen(p.u, p.v);
+    if (x < -40 || y < -40 || x > cw + 40 || y > ch + 40) continue;
+    drawMarker(ctx, x, y, p, pointColor(p, res.get(p.id)), { selected: p.id === state.selected, pending: !isComplete(p) });
+  }
+  drawLoupe();
+}
+
+function drawLoupe() {
+  const h = state.hover;
+  if (!state.loupe || !state.img || !h || drag && drag.moved && !drag.marker) { loupe.hidden = true; return; }
+  const [u, v] = toImage(h[0], h[1]);
+  if (!insideImage(u, v)) { loupe.hidden = true; return; }
+  loupe.hidden = false;
+  loupe.classList.toggle('is-right', h[0] < LOUPE + 40 && h[1] < LOUPE + 40);
+  const dpr = window.devicePixelRatio || 1;
+  const L = LOUPE;
+  const mag = Math.min(Math.max(state.pv.scale * 4, 2), 24);
+  lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  lctx.fillStyle = '#0d0c0b'; lctx.fillRect(0, 0, L, L);
+  lctx.imageSmoothingEnabled = mag < 4;
+  const half = L / 2 / mag;
+  // draw only the part of the source that exists, positioned exactly
+  const sx0 = Math.max(0, u - half), sy0 = Math.max(0, v - half);
+  const sx1 = Math.min(state.W, u + half), sy1 = Math.min(state.H, v + half);
+  if (sx1 > sx0 && sy1 > sy0) {
+    lctx.drawImage(state.img, sx0, sy0, sx1 - sx0, sy1 - sy0,
+      (sx0 - (u - half)) * mag, (sy0 - (v - half)) * mag, (sx1 - sx0) * mag, (sy1 - sy0) * mag);
+  }
+  const res = residualMap();
+  for (const p of state.points) {
+    if (p.u == null) continue;
+    const x = (p.u - u) * mag + L / 2, y = (p.v - v) * mag + L / 2;
+    if (x < -20 || y < -20 || x > L + 20 || y > L + 20) continue;
+    drawMarker(lctx, x, y, null, pointColor(p, res.get(p.id)), { selected: false, pending: !isComplete(p), scale: 0.8 });
+  }
+  // crosshair
+  lctx.strokeStyle = 'rgba(10,9,8,.8)'; lctx.lineWidth = 3;
+  lctx.beginPath(); lctx.moveTo(L / 2, 18); lctx.lineTo(L / 2, L / 2 - 6); lctx.moveTo(L / 2, L / 2 + 6); lctx.lineTo(L / 2, L - 30);
+  lctx.moveTo(18, L / 2); lctx.lineTo(L / 2 - 6, L / 2); lctx.moveTo(L / 2 + 6, L / 2); lctx.lineTo(L - 18, L / 2); lctx.stroke();
+  lctx.strokeStyle = COLORS.safelight; lctx.lineWidth = 1;
+  lctx.stroke();
+  // coordinates
+  lctx.fillStyle = 'rgba(13,12,11,.82)'; lctx.fillRect(0, L - 22, L, 22);
+  lctx.fillStyle = COLORS.text; lctx.font = '500 10.5px "JetBrains Mono", monospace'; lctx.textBaseline = 'middle';
+  lctx.fillText(`u ${u.toFixed(1)}  v ${v.toFixed(1)}`, 8, L - 11);
+}
+
+function updateZoomReadout() {
+  $('#zoomReadout').textContent = state.img ? Math.round(state.pv.scale * 100) + '%' : '–';
+}
+
+let drag = null;
+const localXY = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function markerAt(sx, sy) {
+  let best = null, bd = 13;
+  for (const p of state.points) {
+    if (p.u == null) continue;
+    const [x, y] = toScreen(p.u, p.v);
+    const d = Math.hypot(x - sx, y - sy);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!state.img || e.button === 2) return;
+  canvas.setPointerCapture(e.pointerId);
+  const [sx, sy] = localXY(e);
+  const marker = e.button === 0 ? markerAt(sx, sy) : null;
+  drag = { sx, sy, lx: sx, ly: sy, moved: false, marker, pan: e.button === 1 };
+});
+canvas.addEventListener('pointermove', (e) => {
+  const [sx, sy] = localXY(e);
+  state.hover = [sx, sy];
+  if (drag) {
+    if (!drag.moved && Math.hypot(sx - drag.sx, sy - drag.sy) > 4) {
+      drag.moved = true;
+      if (!drag.marker) canvas.classList.add('is-panning');
+    }
+    if (drag.moved) {
+      if (drag.marker && !drag.pan) {
+        const [u, v] = toImage(sx, sy);
+        drag.marker.u = Math.min(Math.max(u, 0), state.W);
+        drag.marker.v = Math.min(Math.max(v, 0), state.H);
+        state.selected = drag.marker.id;
+      } else {
+        state.pv.tx += sx - drag.lx; state.pv.ty += sy - drag.ly;
+      }
+    }
+    drag.lx = sx; drag.ly = sy;
+  } else {
+    canvas.classList.toggle('is-over-marker', !!markerAt(sx, sy) && !pendingFor('photo'));
+  }
+  drawPhoto();
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  canvas.classList.remove('is-panning');
+  if (d.moved) {
+    if (d.marker && !d.pan) changed(); else drawPhoto();
+    return;
+  }
+  if (d.pan) return;
+  const expecting = pendingFor('photo');
+  if (d.marker && !expecting) { select(d.marker.id); return; }
+  const [u, v] = toImage(d.sx, d.sy);
+  if (!insideImage(u, v)) return;
+  placePhoto(u, v);
+});
+canvas.addEventListener('pointerleave', () => { if (!drag) { state.hover = null; drawPhoto(); } });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('wheel', (e) => {
+  if (!state.img) return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+  const [sx, sy] = localXY(e);
+  zoomAt(Math.exp(-e.deltaY * unit * 0.0016), sx, sy);
+}, { passive: false });
+
+// ======================================================================
+// point editing
+// ======================================================================
+function placePhoto(u, v) {
+  let p = pendingFor('photo');
+  if (p) { p.u = u; p.v = v; }
+  else { p = { id: state.nextId++, u, v, x: null, y: null, z: null, enabled: true }; state.points.push(p); }
+  state.repick = null; state.selected = p.id;
+  changed();
+}
+function placeScene(x, y, z) {
+  let p = pendingFor('scene');
+  if (p) { p.x = x; p.y = y; p.z = z; }
+  else { p = { id: state.nextId++, u: null, v: null, x, y, z, enabled: true }; state.points.push(p); }
+  state.repick = null; state.selected = p.id;
+  changed();
+}
+function select(id) {
+  state.selected = id;
+  renderTable(); drawPhoto(); scene.syncGraphics();
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
+function removePoint(id) {
+  state.points = state.points.filter(p => p.id !== id);
+  if (state.selected === id) state.selected = null;
+  if (state.repick && state.repick.id === id) state.repick = null;
+  if (!state.points.length) state.nextId = 1;
+  changed();
+}
+function startRepick(id, side) {
+  state.repick = { id, side };
+  state.selected = id;
+  renderAll();
+}
+function locate(id) {
+  const p = byId(id); if (!p) return;
+  if (p.u != null && state.img) {
+    const s = Math.max(state.pv.scale, Math.min(cw / state.W, ch / state.H) * 2.5);
+    state.pv.scale = s; state.pv.tx = cw / 2 - p.u * s; state.pv.ty = ch / 2 - p.v * s;
+    drawPhoto();
+  }
+  if (p.x != null) scene.goToPoint(p);
+}
+
+// ======================================================================
+// solving
+// ======================================================================
+let solveTimer = null;
+function scheduleSolve() {
+  clearTimeout(solveTimer);
+  const need = Solver.minPoints(state.opts);
+  if (state.img && activePoints().length >= need) { state.solving = true; renderPill(); }
+  solveTimer = setTimeout(runSolve, 160);
+}
+function runSolve() {
+  const pts = activePoints();
+  const need = Solver.minPoints(state.opts);
+  if (!state.img || pts.length < need) {
+    state.sol = { ok: false, reason: 'too-few', need, n: pts.length };
+  } else {
+    try {
+      state.sol = Solver.solve(pts.map(p => ({ id: p.id, u: p.u, v: p.v, x: p.x, y: p.y, z: p.z })), { w: state.W, h: state.H }, state.opts);
+    } catch (err) {
+      console.error(err);
+      state.sol = { ok: false, reason: 'error', message: err.message };
+    }
+  }
+  state.solving = false;
+  renderSolution(); renderTable(); drawPhoto(); renderSteps();
+  scene.syncCamera();
+  if (state.cameraMode) { if (solved()) scene.applyCameraView(false); else exitCameraMode(); }
+}
+$('#optPP').onchange = (e) => { state.opts.freePP = e.target.checked; scheduleSolve(); };
+$('#optK1').onchange = (e) => { state.opts.k1 = e.target.checked; scheduleSolve(); };
+
+// ======================================================================
+// rendering: table, solution, steps, hints
+// ======================================================================
+const ICONS = {
+  photo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><circle cx="8" cy="8" r="2.2"/></svg>',
+  scene: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.8 14 5 8 8.2 2 5z"/><path d="M2 5v6l6 3.2L14 11V5"/><path d="M8 8.2v6"/></svg>',
+  locate: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="4.5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>',
+  del: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/></svg>',
+};
+
+function renderTable() {
+  const wrap = $('#tableWrap');
+  const complete = state.points.filter(isComplete).length;
+  $('#pairCount').textContent = state.points.length ? `${complete} paired${state.points.length > complete ? ` · ${state.points.length - complete} waiting` : ''}` : '0';
+  $('#btnCopyCsv').disabled = $('#btnClear').disabled = !state.points.length;
+  if (!state.points.length) {
+    wrap.innerHTML = `<div class="empty-table">
+      <span class="label">How pairing works</span>
+      <ol>
+        <li>Click a sharp feature in the photo: a building corner, a cornice end, a church spire.</li>
+        <li>Click the same feature on the mesh in the 3D scene.</li>
+        <li>Repeat. The camera is solved from ${Solver.minPoints(state.opts)} pairs and gets more precise with every pair you add.</li>
+      </ol>
+      <span>You can also start in the scene. Drag a marker in the photo to adjust it.</span>
+    </div>`;
+    return;
+  }
+  const res = residualMap();
+  const maxErr = Math.max(1, ...[...res.values()].map(r => r.err));
+  const nextPhoto = pendingFor('photo'), nextScene = pendingFor('scene');
+  const rows = state.points.map(p => {
+    const r = res.get(p.id);
+    const pidCls = !p.enabled ? 'is-off' : !isComplete(p) ? 'is-pending' : (r && r.suspect) ? 'is-suspect' : '';
+    const photo = p.u != null
+      ? `<td class="num coord">${fmt(p.u, 1)}</td><td class="num coord">${fmt(p.v, 1)}</td>`
+      : `<td colspan="2" class="num"><span class="missing ${nextPhoto === p ? 'is-next' : ''}">${nextPhoto === p ? 'click in photo' : 'not placed'}</span></td>`;
+    const gap = '<td class="c-gap"></td>';
+    const world = p.x != null
+      ? `<td class="num coord">${fmt(p.x, 2)}</td><td class="num coord">${fmt(p.y, 2)}</td><td class="num coord">${fmt(p.z, 2)}</td>`
+      : `<td colspan="3" class="num"><span class="missing ${nextScene === p ? 'is-next' : ''}">${nextScene === p ? 'click in scene' : 'not placed'}</span></td>`;
+    const resid = r
+      ? `<span class="resid ${r.suspect ? 'is-suspect' : ''}" title="Δu ${fmt(r.du, 2)} px, Δv ${fmt(r.dv, 2)} px"><span class="coord">${fmt(r.err, 2)}</span><span class="bar"><i style="width:${Math.min(100, r.err / maxErr * 100)}%"></i></span></span>`
+      : '';
+    return `<tr data-id="${p.id}" class="${p.id === state.selected ? 'is-selected' : ''} ${p.enabled ? '' : 'is-off'}">
+      <td class="c-id"><span class="pid ${pidCls}">${p.id}</span></td>
+      ${photo}${gap}
+      ${world}${gap}
+      <td class="num">${resid}</td>
+      <td class="c-use"><input type="checkbox" class="use-toggle" data-act="toggle" ${p.enabled ? 'checked' : ''} ${isComplete(p) ? '' : 'disabled'} aria-label="Use point ${p.id} in the solution" title="Use in solution"></td>
+      <td class="c-fill"></td>
+      <td class="c-actions"><span class="row-actions">
+        <button class="icon-btn" type="button" data-act="photo" title="Place again in the photo">${ICONS.photo}</button>
+        <button class="icon-btn" type="button" data-act="scene" title="Place again in the scene">${ICONS.scene}</button>
+        <button class="icon-btn" type="button" data-act="locate" title="Show in both views">${ICONS.locate}</button>
+        <button class="icon-btn danger" type="button" data-act="delete" title="Delete pair">${ICONS.del}</button>
+      </span></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="ptable">
+    <thead>
+      <tr class="grp"><th></th><th colspan="2" class="g">Photo · px</th><th class="c-gap"></th><th colspan="3" class="g">Scene · EPSG:3857 · m</th><th class="c-gap"></th><th colspan="2" class="g">Solution</th><th class="c-fill"></th><th></th></tr>
+      <tr class="sub"><th class="c-id">#</th><th class="num">u</th><th class="num">v</th><th class="c-gap"></th><th class="num">X</th><th class="num">Y</th><th class="num">Z</th><th class="c-gap"></th><th class="num">Residual · px</th><th class="c-use">Use</th><th class="c-fill"></th><th class="c-actions"></th></tr>
+    </thead><tbody>${rows}</tbody></table>`;
+}
+$('#tableWrap').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-id]'); if (!tr) return;
+  const id = +tr.dataset.id;
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'toggle') { const p = byId(id); p.enabled = e.target.checked; changed(); return; }
+  if (act === 'photo') return startRepick(id, 'photo');
+  if (act === 'scene') return startRepick(id, 'scene');
+  if (act === 'locate') { select(id); return locate(id); }
+  if (act === 'delete') return removePoint(id);
+  select(id);
+});
+
+function renderPill() {
+  const pill = $('#solPill');
+  const s = state.sol;
+  let cls = '', text = 'Waiting';
+  if (state.solving) { cls = 'is-busy is-ok'; text = 'Solving'; }
+  else if (!s || s.reason === 'too-few') { text = s ? `${s.n} of ${s.need} pairs` : 'Waiting'; }
+  else if (s.reason === 'error' || s.reason === 'behind') { cls = 'is-bad'; text = 'No solution'; }
+  else if (s.ok && s.warnings && s.warnings.length) { cls = 'is-warn'; text = 'Weak geometry'; }
+  else if (s.ok) { cls = 'is-ok'; text = 'Solved'; }
+  pill.className = 'pill ' + cls;
+  pill.textContent = text;
+}
+
+function readout(label, value, unit = '', sigma = null, sigmaUnit = '', digits = 2) {
+  const sig = sigma != null && isFinite(sigma) ? `<small>± ${fmt(sigma, digits)}${sigmaUnit}</small>` : '';
+  return `<dt>${label}</dt><dd>${value}${unit ? `<span class="unit">${unit}</span>` : ''}${sig}</dd>`;
+}
+
+const WARN_TEXT = {
+  'lens-limit': ['Focal length hit the plausible limit.', 'The points cannot separate focal length from distance. Add points much nearer and much farther from the camera.'],
+  'weak-geometry': ['The position is poorly determined.', 'Its uncertainty exceeds 10% of the distance to the points. Spread pairs across the whole photo and across depth.'],
+  'flat-depth': ['All points sit at similar distances.', 'Pairs at very different depths (foreground and far background) pin down the focal length.'],
+};
+
+function renderSolution() {
+  renderPill();
+  const wrap = $('#solWrap');
+  const s = state.sol;
+  const need = Solver.minPoints(state.opts);
+  const n = activePoints().length;
+  $('#btnCameraView') && ($('#btnCameraView').disabled = !solved());
+  if (!s || s.reason === 'too-few' || !state.img) {
+    const total = Math.max(need, n);
+    const segs = Array.from({ length: Math.max(total, 8) }, (_, i) => `<i class="${i < Math.min(n, need) ? 'on' : i < n ? 'extra' : ''}"></i>`).join('');
+    wrap.innerHTML = `<div class="sol"><div class="progress">
+      <span class="label">Pairs for a solution</span>
+      <div class="segs">${segs}</div>
+      <p><strong>${n} of ${need}</strong> pairs ready.${!state.img ? ' Open a photo to begin.' : n < need ? ` Add ${need - n} more to solve the camera.` : ''} Eight or more give a precise, checkable result.</p>
+      <ul class="tips">
+        <li>Spread points over the whole frame, including the edges.</li>
+        <li>Mix near and far features. Depth variety fixes the focal length.</li>
+        <li>Prefer features that still exist unchanged.</li>
+      </ul>
+    </div></div>`;
+    return;
+  }
+  if (!s.ok) {
+    const msg = s.reason === 'behind'
+      ? 'The best fit puts some points behind the camera. One or more pairs are probably matched to the wrong feature. Check the pairs with the largest residuals or switch them off.'
+      : `The solver stopped with an error: ${s.message || 'unknown'}.`;
+    wrap.innerHTML = `<div class="sol"><div class="warn is-bad"><strong>No valid camera found</strong><span>${msg}</span></div></div>`;
+    return;
+  }
+  const c = s.camera, sd = s.std || {};
+  const warns = (s.warnings || []).map(w => `<div class="warn"><strong>${WARN_TEXT[w][0]}</strong><span>${WARN_TEXT[w][1]}</span></div>`).join('');
+  const suspects = s.residuals.filter(r => r.suspect).map(r => r.id);
+  const suspectWarn = suspects.length ? `<div class="warn is-bad"><strong>Check pair${suspects.length > 1 ? 's' : ''} ${suspects.join(', ')}</strong><span>Much larger error than the rest. It may be matched to the wrong feature. Switch it off to see if the fit improves.</span></div>` : '';
+  const pitchTxt = `${c.pitch >= 0 ? '+' : ''}${fmt(c.pitch, 2)}° ${c.pitch >= 0 ? 'up' : 'down'}`;
+  wrap.innerHTML = `<div class="sol">
+    <div class="quality">
+      <div class="q"><span class="label">Pairs used</span><b>${s.n}</b></div>
+      <div class="q"><span class="label">RMS error</span><b>${fmt(s.rms, 2)}<small>px</small></b></div>
+      <div class="q"><span class="label">σ₀</span><b>${fmt(s.sigma0, 2)}<small>px</small></b></div>
+      <div class="q"><span class="label">Redundancy</span><b>${s.dof}</b></div>
+    </div>
+    ${suspectWarn}${warns}
+    <div class="groups">
+      <div class="group">
+        <span class="label">Position</span>
+        <dl class="ro">
+          ${readout('X', fmt(c.x, 2), '', sd.E, ' m E')}
+          ${readout('Y', fmt(c.y, 2), '', sd.N, ' m N')}
+          ${readout('Z', fmt(c.z, 2), 'm', sd.U, ' m')}
+          <span class="sub">${fmt(c.lat, 7)}° N<br>${fmt(c.lon, 7)}° E</span>
+        </dl>
+      </div>
+      <div class="group">
+        <span class="label">Orientation</span>
+        <dl class="ro">
+          ${readout('Heading', fmt(c.heading, 2), '°', sd.heading, '°', 3)}
+          ${readout('Tilt', fmt(c.tilt, 2), '°', sd.tilt, '°', 3)}
+          ${readout('Roll', fmt(c.roll, 2), '°', sd.roll, '°', 3)}
+          <span class="sub">pitch ${pitchTxt}<br>heading from true north</span>
+        </dl>
+      </div>
+      <div class="group">
+        <span class="label">Lens</span>
+        <dl class="ro">
+          ${readout('Focal', fmt(c.f, 1), 'px', sd.f, ' px', 1)}
+          ${readout("Field of view", `${fmt(c.hfov, 1)} × ${fmt(c.vfov, 1)}°`)}
+          ${readout('35 mm equiv.', fmt(c.f35, 1), 'mm')}
+          ${state.opts.freePP ? readout('Image center', `${fmt(c.cx, 1)}, ${fmt(c.cy, 1)}`, 'px') : ''}
+          ${state.opts.k1 ? readout('k1', fmt(c.k1, 4), '', sd.k1, '', 4) : ''}
+        </dl>
+      </div>
+    </div>
+    <div class="sol-actions">
+      <button class="btn btn-fixer" type="button" id="btnCameraView">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>
+        View from camera</button>
+      <button class="btn" type="button" id="btnCopyCam">Copy camera</button>
+      <button class="btn" type="button" id="btnCopyAll">Copy everything</button>
+    </div>
+    <p class="sol-note">± values are one standard deviation from the least-squares fit. They shrink as you add well-spread pairs. Tilt follows ArcGIS: 0° looks straight down, 90° at the horizon. Z uses the same height reference as the scene.</p>
+  </div>`;
+  $('#btnCameraView').onclick = () => (state.cameraMode ? exitCameraMode() : enterCameraMode());
+  $('#btnCopyCam').onclick = () => copyText(JSON.stringify(cameraExport(), null, 2), 'Camera copied as JSON');
+  $('#btnCopyAll').onclick = () => copyText(JSON.stringify(fullExport(), null, 2), 'Points and camera copied as JSON');
+  updateCameraButton();
+}
+
+function renderSteps() {
+  const steps = {
+    photo: !!state.img,
+    pairs: activePoints().length >= Solver.minPoints(state.opts),
+    camera: solved(),
+  };
+  const current = ['photo', 'pairs', 'camera'].find(k => !steps[k]);
+  document.querySelectorAll('.step').forEach(el => {
+    const k = el.dataset.step;
+    el.classList.toggle('is-done', steps[k]);
+    el.classList.toggle('is-current', k === current);
+  });
+  const n = state.points.filter(isComplete).length;
+  $('#stepPairs').textContent = n ? n : '';
+}
+
+function renderHints() {
+  const ph = $('#photoHint'), sh = $('#sceneHint');
+  const pPhoto = pendingFor('photo'), pScene = pendingFor('scene');
+  $('#photoBody').classList.toggle('is-expecting', !!pPhoto && !!state.img);
+  $('#sceneBody').classList.toggle('is-expecting', !!pScene);
+  $('#viewDiv').classList.toggle('is-placing', !!pScene);
+  ph.classList.remove('is-active'); sh.classList.remove('is-active');
+  // only live prompts are shown here; general instructions live in Help
+  ph.hidden = true; sh.hidden = true;
+  if (!state.img) return;
+  const show = (el) => { el.hidden = el === sh && state.cameraMode; };
+  if (state.repick || pScene || pPhoto) { show(ph); show(sh); }
+  if (state.repick) {
+    const t = state.repick.side === 'photo' ? ph : sh;
+    const o = state.repick.side === 'photo' ? sh : ph;
+    t.classList.add('is-active');
+    t.innerHTML = `Click the new position of point <span class="num">${state.repick.id}</span> · <kbd>Esc</kbd> cancels`;
+    o.innerHTML = state.repick.side === 'photo' ? 'Re-placing in the photo' : 'Re-placing in the scene';
+    return;
+  }
+  if (pScene) {
+    sh.classList.add('is-active');
+    sh.innerHTML = `Now click point <span class="num">${pScene.id}</span> on the mesh`;
+    ph.innerHTML = `Point <span class="num">${pScene.id}</span> waits for its scene position · <kbd>Esc</kbd> discards it`;
+  } else if (pPhoto) {
+    ph.classList.add('is-active');
+    ph.innerHTML = `Now click point <span class="num">${pPhoto.id}</span> in the photo${solved() ? ' · the dashed ring shows where it should be' : ''}`;
+    sh.innerHTML = `Point <span class="num">${pPhoto.id}</span> waits for its photo position · <kbd>Esc</kbd> discards it`;
+  }
+}
+
+function renderAll() { renderTable(); renderHints(); renderSteps(); drawPhoto(); scene.syncGraphics(); }
+function changed() { renderAll(); scheduleSolve(); }
+
+// ======================================================================
+// export / import
+// ======================================================================
+function cameraExport() {
+  const s = state.sol; if (!solved()) return null;
+  const c = s.camera, sd = s.std || {};
+  const out = {
+    spatialReference: { wkid: 3857 },
+    position: { x: +c.x.toFixed(3), y: +c.y.toFixed(3), z: +c.z.toFixed(3) },
+    wgs84: { longitude: +c.lon.toFixed(8), latitude: +c.lat.toFixed(8) },
+    heading: +c.heading.toFixed(4), tilt: +c.tilt.toFixed(4), pitch: +c.pitch.toFixed(4), roll: +c.roll.toFixed(4),
+    focalLengthPx: +c.f.toFixed(2),
+    principalPointPx: { x: +c.cx.toFixed(2), y: +c.cy.toFixed(2) },
+    k1: state.opts.k1 ? +c.k1.toFixed(6) : 0,
+    horizontalFieldOfView: +c.hfov.toFixed(3), verticalFieldOfView: +c.vfov.toFixed(3), diagonalFieldOfView: +c.dfov.toFixed(3),
+    focalLength35mmEquivalent: +c.f35.toFixed(1),
+    precision1Sigma: Object.fromEntries(Object.entries({
+      eastM: sd.E, northM: sd.N, upM: sd.U, headingDeg: sd.heading, tiltDeg: sd.tilt, rollDeg: sd.roll, focalPx: sd.f, cxPx: sd.cx, cyPx: sd.cy, k1: sd.k1,
+    }).filter(([, v]) => v != null).map(([k, v]) => [k, +v.toPrecision(4)])),
+    quality: { pairsUsed: s.n, rmsPx: +s.rms.toFixed(3), sigma0Px: +s.sigma0.toFixed(3), redundancy: s.dof, warnings: s.warnings },
+    conventions: 'heading clockwise from true north; tilt 0 = straight down, 90 = horizon (ArcGIS); pitch = tilt - 90; roll positive = image rotated clockwise vs. a level camera',
+  };
+  return out;
+}
+function fullExport() {
+  return {
+    app: 'Standpoint', format: 1,
+    exported: new Date().toISOString(),
+    photo: state.img ? { name: state.imgName, width: state.W, height: state.H, pixelOrigin: 'top-left corner, v down' } : null,
+    spatialReference: { wkid: 3857 },
+    options: { ...state.opts },
+    points: state.points.map(p => ({ id: p.id, u: p.u == null ? null : +p.u.toFixed(2), v: p.v == null ? null : +p.v.toFixed(2), x: p.x == null ? null : +p.x.toFixed(3), y: p.y == null ? null : +p.y.toFixed(3), z: p.z == null ? null : +p.z.toFixed(3), enabled: p.enabled })),
+    camera: cameraExport(),
+  };
+}
+function csvExport() {
+  const res = residualMap();
+  const lines = ['id,u,v,x,y,z,enabled,residual_px'];
+  state.points.forEach(p => {
+    const r = res.get(p.id);
+    lines.push([p.id, p.u?.toFixed(2) ?? '', p.v?.toFixed(2) ?? '', p.x?.toFixed(3) ?? '', p.y?.toFixed(3) ?? '', p.z?.toFixed(3) ?? '', p.enabled ? 1 : 0, r ? r.err.toFixed(3) : ''].join(','));
+  });
+  return lines.join('\n');
+}
+$('#btnCopyCsv').onclick = () => copyText(csvExport(), `${state.points.length} points copied as CSV`);
+$('#btnClear').onclick = () => confirmBox('Remove all point pairs?', `This deletes ${state.points.length} pair${state.points.length > 1 ? 's' : ''}. Copy them first if you want to keep them.`, [
+  { label: 'Cancel' },
+  { label: 'Remove all', cls: 'btn-primary', run: () => { state.points = []; state.nextId = 1; state.selected = null; state.repick = null; changed(); } },
+]);
+$('#btnImport').onclick = () => { $('#importErr').hidden = true; openModal('#importModal'); };
+function parseImport(text) {
+  text = text.trim();
+  if (!text) throw new Error('Paste some points first.');
+  const num = (v) => (v === '' || v == null || v === 'null') ? null : (isFinite(+v) ? +v : NaN);
+  let rows;
+  if (text[0] === '{' || text[0] === '[') {
+    const data = JSON.parse(text);
+    rows = Array.isArray(data) ? data : data.points;
+    if (!Array.isArray(rows)) throw new Error('The JSON has no "points" list.');
+    if (data.options) { state.opts.freePP = !!data.options.freePP; state.opts.k1 = !!data.options.k1; $('#optPP').checked = state.opts.freePP; $('#optK1').checked = state.opts.k1; }
+  } else {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    const sep = lines[0].includes(';') && !lines[0].includes(',') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+    const head = lines[0].split(sep).map(h => h.trim().toLowerCase());
+    const hasHead = head.includes('u') && head.includes('x');
+    const cols = hasHead ? head : ['id', 'u', 'v', 'x', 'y', 'z', 'enabled'];
+    rows = lines.slice(hasHead ? 1 : 0).map(l => { const c = l.split(sep); const o = {}; cols.forEach((k, i) => { o[k] = c[i] != null ? c[i].trim() : ''; }); return o; });
+  }
+  // Only id, coordinates and the Use flag are read. Residuals or camera values in
+  // the pasted text are ignored; the solver recalculates them.
+  const pts = rows.map((r, i) => {
+    const idv = num(r.id);
+    const p = { id: Number.isInteger(idv) && idv > 0 ? idv : i + 1, u: num(r.u), v: num(r.v), x: num(r.x), y: num(r.y), z: num(r.z), enabled: !(r.enabled === false || r.enabled === 0 || r.enabled === '0' || r.enabled === 'false') };
+    if ([p.u, p.v, p.x, p.y, p.z].some(v => Number.isNaN(v))) throw new Error(`Row ${i + 1} has a value that is not a number.`);
+    if ((p.u == null) !== (p.v == null)) throw new Error(`Row ${i + 1} needs both u and v.`);
+    if ((p.x == null) !== (p.y == null)) throw new Error(`Row ${i + 1} needs both x and y.`);
+    if (p.x != null && p.z == null) p.z = 0;
+    if (p.u == null && p.x == null) throw new Error(`Row ${i + 1} has neither photo nor scene coordinates.`);
+    return p;
+  });
+  const ids = new Set();
+  pts.forEach(p => { while (ids.has(p.id)) p.id++; ids.add(p.id); });
+  return pts;
+}
+$('#importForm').onsubmit = (e) => {
+  e.preventDefault();
+  try {
+    const pts = parseImport($('#importText').value);
+    state.points = pts; state.nextId = Math.max(0, ...pts.map(p => p.id)) + 1;
+    state.selected = null; state.repick = null;
+    closeModal('#importModal');
+    changed();
+    const outside = state.img ? pts.filter(p => p.u != null && !insideImage(p.u, p.v)).length : 0;
+    toast(`${pts.length} points loaded${outside ? ` · ${outside} fall outside this photo` : ''}`, outside > 0);
+  } catch (err) {
+    const el = $('#importErr'); el.textContent = err.message; el.hidden = false;
+  }
+};
+
+// ======================================================================
+// keyboard
+// ======================================================================
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const modalOpen = [...document.querySelectorAll('.modal-back')].some(m => !m.hidden);
+  if (e.key === 'Escape') {
+    if (modalOpen) { document.querySelectorAll('.modal-back').forEach(m => { m.hidden = true; }); return; }
+    if (state.cameraMode) { exitCameraMode(); return; }
+    if (state.repick) { state.repick = null; renderAll(); return; }
+    const half = state.points.find(p => !isComplete(p));
+    if (half && (pendingFor('photo') === half || pendingFor('scene') === half)) { removePoint(half.id); toast(`Point ${half.id} discarded`); return; }
+    if (state.selected) { state.selected = null; renderAll(); }
+    return;
+  }
+  if (modalOpen) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) { e.preventDefault(); removePoint(state.selected); return; }
+  if (e.key === 'f' || e.key === 'F') { fitPhoto(); return; }
+  if (e.key === 'm' || e.key === 'M') { $('#optLoupe').click(); return; }
+  if (e.key === '?') { openModal('#helpModal'); return; }
+  if (e.key === '+' || e.key === '=') { zoomAt(1.5); return; }
+  if (e.key === '-' || e.key === '_') { zoomAt(1 / 1.5); }
+});
+
+// ======================================================================
+// splitter
+// ======================================================================
+(() => {
+  const sp = $('#splitter'), ws = $('#workspace');
+  let active = false;
+  sp.addEventListener('pointerdown', (e) => { active = true; sp.setPointerCapture(e.pointerId); sp.classList.add('is-dragging'); });
+  sp.addEventListener('pointermove', (e) => {
+    if (!active) return;
+    const r = ws.getBoundingClientRect();
+    const pct = Math.min(80, Math.max(20, (e.clientX - r.left) / r.width * 100));
+    ws.style.setProperty('--left', pct.toFixed(2) + '%');
+  });
+  sp.addEventListener('pointerup', () => {
+    active = false; sp.classList.remove('is-dragging');
+  });
+  sp.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const cur = parseFloat(ws.style.getPropertyValue('--left')) || 50;
+    const pct = Math.min(80, Math.max(20, cur + (e.key === 'ArrowLeft' ? -2 : 2)));
+    ws.style.setProperty('--left', pct + '%');
+  });
+})();
+
+// dock height
+(() => {
+  const sp = $('#dockSplitter'), app = $('.app');
+  const clampH = (h) => {
+    const top = $('.topbar').getBoundingClientRect().height;
+    return Math.round(Math.min(Math.max(h, 120), app.clientHeight - top - 7 - 160));
+  };
+  const setH = (h) => { app.style.setProperty('--dock-h', clampH(h) + 'px'); };
+  let active = false;
+  sp.addEventListener('pointerdown', (e) => { active = true; sp.setPointerCapture(e.pointerId); sp.classList.add('is-dragging'); });
+  sp.addEventListener('pointermove', (e) => {
+    if (!active) return;
+    setH(app.getBoundingClientRect().bottom - e.clientY - 3.5);
+  });
+  sp.addEventListener('pointerup', () => {
+    active = false; sp.classList.remove('is-dragging');
+  });
+  sp.addEventListener('dblclick', () => { app.style.removeProperty('--dock-h'); });
+  sp.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    const cur = $('.dock').getBoundingClientRect().height;
+    setH(cur + (e.key === 'ArrowUp' ? 32 : -32));
+  });
+  window.addEventListener('resize', () => { const v = parseFloat(app.style.getPropertyValue('--dock-h')); if (v) setH(v); });
+})();
+
+// ======================================================================
+// camera view mode (photo overlaid on the scene from the solved camera)
+// ======================================================================
+function enterCameraMode() {
+  if (!solved() || !scene.ready) { if (!scene.ready) toast('The 3D scene is not ready yet', true); return; }
+  state.cameraMode = true;
+  $('#cameraHud').hidden = false;
+  scene.applyCameraView(true);
+  renderHints(); updateCameraButton();
+}
+function exitCameraMode() {
+  if (!state.cameraMode) return;
+  state.cameraMode = false;
+  $('#overlayWrap').hidden = true;
+  $('#cameraHud').hidden = true;
+  scene.releaseCameraView();
+  renderHints(); updateCameraButton();
+}
+function updateCameraButton() {
+  const b = $('#btnCameraView'); if (!b) return;
+  b.lastChild.textContent = state.cameraMode ? ' Leave camera view' : ' View from camera';
+}
+$('#btnExitCamera').onclick = exitCameraMode;
+const paintRange = (el) => el.style.setProperty('--fill', (el.value - el.min) / (el.max - el.min) * 100 + '%');
+$('#overlayOpacity').oninput = (e) => {
+  $('#overlayImg').style.opacity = e.target.value / 100;
+  $('#opacityValue').textContent = e.target.value + '%';
+  paintRange(e.target);
+};
+paintRange($('#overlayOpacity'));
+$('#clipInfoBtn').onclick = () => {
+  const box = $('#clipInfo'), open = box.hidden;
+  box.hidden = !open; $('#clipInfoBtn').setAttribute('aria-expanded', String(open));
+};
+
+// ======================================================================
+// ArcGIS scene
+// ======================================================================
+const scene = {
+  ready: false,
+  syncGraphics() {}, syncCamera() {}, goToPoint() {}, goToPoints() {}, applyCameraView() {}, releaseCameraView() {},
+};
+
+function showBanner(html, isError = false) {
+  const b = $('#sceneBanner');
+  b.innerHTML = html; b.hidden = !html;
+  b.classList.toggle('is-error', isError);
+}
+
+$('#btnLayer').onclick = () => toast('The 3D scene is still loading', true);
+if (typeof window.require !== 'function') {
+  showBanner('<strong>The 3D scene could not load.</strong><p>The ArcGIS library did not arrive. Check the internet connection and reload. The photo side still works.</p>', true);
+} else {
+  window.require([
+    'esri/config', 'esri/Map', 'esri/WebScene', 'esri/views/SceneView', 'esri/layers/Layer', 'esri/layers/GraphicsLayer',
+    'esri/Graphic', 'esri/geometry/Point', 'esri/geometry/Polyline', 'esri/Camera', 'esri/portal/PortalItem', 'esri/core/reactiveUtils',
+    'esri/Ground', 'esri/layers/WMSLayer', 'esri/layers/WMTSLayer', 'esri/layers/GeoJSONLayer',
+    'esri/geometry/Polygon', 'esri/layers/support/SceneModification', 'esri/layers/support/SceneModifications',
+  ], (esriConfig, EsriMap, WebScene, SceneView, Layer, GraphicsLayer, Graphic, Point, Polyline, Camera, PortalItem, reactiveUtils, Ground, WMSLayer, WMTSLayer, GeoJSONLayer, Polygon, SceneModification, SceneModifications) => {
+    const SR = { wkid: 3857 };
+    const PRAGUE_MESH = {
+      url: 'https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/praha2023_merged_WM/SceneServer',
+      title: '3D Mesh Model (Prague)',
+    };
+    const map = new EsriMap({ ground: new Ground({ surfaceColor: [36, 34, 31] }) });
+    const camLayer = new GraphicsLayer({ title: 'Solved camera', elevationInfo: { mode: 'absolute-height' }, listMode: 'hide' });
+    map.add(camLayer);
+
+    const view = new SceneView({
+      container: 'viewDiv',
+      map,
+      spatialReference: SR,
+      viewingMode: 'global',
+      // looking north-east across the river towards the Old Town
+      camera: { position: { longitude: 14.405, latitude: 50.072, z: 1100 }, heading: 34, tilt: 66 },
+      qualityProfile: 'high',
+      popupEnabled: false,
+      environment: { starsEnabled: false, atmosphereEnabled: true },
+      ui: { components: ['zoom', 'navigation-toggle', 'compass'] },
+    });
+    view.ui.move(['zoom', 'navigation-toggle', 'compass'], 'top-right');
+
+    // ---- layers
+    const mesh = { layer: null, status: 'loading', message: '' };
+    const custom = []; // {src, layer, title, problem}
+    const KIND = {
+      'integrated-mesh': 'Integrated mesh', 'integrated-mesh-3dtiles': '3D Tiles mesh', scene: '3D objects', 'building-scene': 'Building scene', 'point-cloud': 'Point cloud',
+      feature: 'Features', 'map-image': 'Map image', tile: 'Tiles', 'vector-tile': 'Vector tiles', imagery: 'Imagery', 'imagery-tile': 'Imagery tiles',
+      elevation: 'Elevation (ground)', wms: 'WMS', wmts: 'WMTS', geojson: 'GeoJSON', 'web-tile': 'Web tiles', voxel: 'Voxel', group: 'Group',
+    };
+    const kindOf = (l) => KIND[l.type] || l.type || 'Layer';
+    const TILED = ['tile', 'vector-tile', 'imagery-tile', 'elevation', 'web-tile', 'wmts'];
+
+    function renderLayerMeta() {
+      const m = $('#layerMeta');
+      const base = mesh.status === 'ok' ? PRAGUE_MESH.title : mesh.status === 'loading' ? 'Loading 3D mesh…' : '3D mesh unavailable';
+      m.textContent = base + (custom.length ? ` · +${custom.length} layer${custom.length > 1 ? 's' : ''}` : '');
+      m.title = m.textContent;
+    }
+    function renderLayerList() {
+      const sw = (key, on) => `<label class="switch" title="Show or hide"><input type="checkbox" data-vis="${key}" ${on ? 'checked' : ''}></label>`;
+      let meshRight;
+      if (mesh.status === 'ok') meshRight = sw('mesh', mesh.layer.visible);
+      else if (mesh.status === 'loading') meshRight = '<span class="lstate">Loading…</span>';
+      else meshRight = '<span class="lstate is-bad">Failed</span><button class="btn btn-ghost" type="button" data-retry>Retry</button>';
+      const rows = [`<li><div class="lname"><b>${escapeHtml(PRAGUE_MESH.title)}</b><span>Integrated mesh · built in</span></div>${meshRight}</li>`];
+      custom.forEach((c, i) => {
+        const sub = c.problem
+          ? `<span class="lproblem" title="${escapeHtml(c.problem)}">${escapeHtml(c.problem)}</span>`
+          : `<span title="${escapeHtml(c.src)}">${escapeHtml(kindOf(c.layer))} · ${escapeHtml(c.src)}</span>`;
+        rows.push(`<li${c.problem ? ' class="has-problem"' : ''}><div class="lname">
+          <input class="lname-input" id="layerName${i}" data-rename="${i}" value="${escapeHtml(c.title)}" aria-label="Layer name" title="Click to rename" spellcheck="false">
+          ${sub}</div>
+          ${sw(i, c.layer.visible)}<button class="icon-btn danger" type="button" data-remove="${i}" title="Remove layer">${ICONS.del}</button></li>`);
+      });
+      $('#layerList').innerHTML = rows.join('');
+    }
+    $('#layerList').addEventListener('change', (e) => {
+      const k = e.target.dataset.vis;
+      if (k != null) {
+        const layer = k === 'mesh' ? mesh.layer : custom[+k].layer;
+        if (layer) layer.visible = e.target.checked;
+        return;
+      }
+      const r = e.target.dataset.rename;
+      if (r != null) {
+        const c = custom[+r], name = e.target.value.trim();
+        if (!name) { e.target.value = c.title; return; }
+        c.title = name; c.layer.title = name;
+        toast(`Renamed to ${name}`);
+      }
+    });
+    $('#layerList').addEventListener('keydown', (e) => {
+      if (e.target.dataset.rename != null && e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+    });
+    $('#layerList').addEventListener('click', (e) => {
+      if (e.target.closest('[data-retry]')) { loadMesh(); return; }
+      const rm = e.target.closest('[data-remove]'); if (!rm) return;
+      const [c] = custom.splice(+rm.dataset.remove, 1);
+      if (c.layer.type === 'elevation') map.ground.layers.remove(c.layer); else map.remove(c.layer);
+      renderLayerList(); renderLayerMeta();
+    });
+
+    async function loadMesh() {
+      mesh.status = 'loading'; renderLayerList(); renderLayerMeta();
+      showBanner('');
+      try {
+        const layer = await Layer.fromArcGISServerUrl({ url: PRAGUE_MESH.url });
+        layer.title = PRAGUE_MESH.title;
+        map.add(layer, 0);
+        await layer.load();
+        mesh.layer = layer; mesh.status = 'ok';
+      } catch (err) {
+        mesh.status = 'error'; mesh.message = friendlyLayerError(err);
+        showBanner(`<strong>The 3D mesh could not load.</strong><p>${escapeHtml(mesh.message)}</p><div class="row"><button class="btn btn-primary" type="button" data-retry>Try again</button></div>`, true);
+      }
+      renderLayerList(); renderLayerMeta();
+    }
+    $('#sceneBanner').addEventListener('click', (e) => { if (e.target.closest('[data-retry]')) loadMesh(); });
+
+    // build a layer from an item ID, an ArcGIS service URL, an OGC service or a GeoJSON file
+    async function makeLayers(src) {
+      if (/^[0-9a-f]{32}$/i.test(src)) {
+        const item = new PortalItem({ id: src });
+        await item.load();
+        if (item.type === 'Web Scene') {
+          const ws = new WebScene({ portalItem: item });
+          await ws.load();
+          return [...ws.layers.removeAll(), ...(ws.ground ? ws.ground.layers.removeAll() : [])];
+        }
+        return [await Layer.fromPortalItem({ portalItem: item })];
+      }
+      if (!/^https?:\/\//i.test(src)) throw new Error('Enter a URL starting with https:// or a 32-character item ID.');
+      if (/[?&]service=wmts\b|\/wmts\b/i.test(src)) return [new WMTSLayer({ url: src })];
+      if (/[?&]service=wms\b|\/wms\b|wmsserver/i.test(src)) return [new WMSLayer({ url: src.split('?')[0] })];
+      if (/\.geojson(\?|$)|[?&]f=geojson\b/i.test(src)) return [new GeoJSONLayer({ url: src })];
+      return [await Layer.fromArcGISServerUrl({ url: src })];
+    }
+    // Tiled layers are draped as they are cut; a Web Mercator scene can only use
+    // tiles cut in Web Mercator. Report this instead of showing an empty ground.
+    function tilingProblem(l) {
+      const tsr = (l.tileInfo && l.tileInfo.spatialReference)
+        || (l.activeLayer && l.activeLayer.tileMatrixSet && l.activeLayer.tileMatrixSet.tileInfo && l.activeLayer.tileMatrixSet.tileInfo.spatialReference);
+      if (TILED.includes(l.type) && tsr && !tsr.isWebMercator && !(l.type === 'elevation' && tsr.isWGS84)) {
+        return `Not shown: its tiles are cut in EPSG:${tsr.wkid || tsr.latestWkid || '?'}. This 3D scene needs Web Mercator (EPSG:3857) tiles. Add the 3857 version of the service, or its map-image (dynamic) version.`;
+      }
+      return null;
+    }
+    function watchDisplay(c) {
+      c.problem = tilingProblem(c.layer);
+      view.whenLayerView(c.layer).catch((err) => {
+        if (!custom.includes(c)) return;
+        const m = (err && (err.message || err.name)) || 'unknown error';
+        c.problem = c.problem || (/spatial|tiling|reference/i.test(m)
+          ? 'Not shown: its coordinate system or tiling does not match this Web Mercator scene.'
+          : `Not shown: ${m}`);
+        renderLayerList();
+      });
+    }
+    async function addCustom(src, name, quiet = false, names = null) {
+      src = src.trim(); name = (name || '').trim();
+      if (!src) throw new Error('Paste a layer URL or item ID first.');
+      if (custom.some(c => c.src === src) || src === PRAGUE_MESH.url) throw new Error('This layer is already in the scene.');
+      const all = await makeLayers(src);
+      await Promise.all(all.map(l => l.load()));
+      all.forEach((l, i) => {
+        const title = (names && names[i]) || (name ? (all.length > 1 ? `${name}: ${l.title || i + 1}` : name) : (l.title || 'Untitled layer'));
+        l.title = title;
+        if (l.type === 'elevation') map.ground.layers.add(l);
+        else map.add(l, map.layers.indexOf(camLayer));
+        const c = { src, layer: l, title, problem: null };
+        custom.push(c);
+        watchDisplay(c);
+      });
+      renderLayerList(); renderLayerMeta();
+      const bad = all.map(l => custom.find(c => c.layer === l)).filter(c => c.problem);
+      if (bad.length) toast(`${bad[0].title} cannot be shown in this scene. See the Layers list.`, true);
+      else if (!quiet) toast(all.length > 1 ? `Added ${all.length} layers` : `Added ${all[0].title}`);
+    }
+    function friendlyLayerError(err) {
+      const m = (err && (err.message || err.details?.message)) || String(err);
+      if (/aborted|cancel/i.test(m)) return 'Sign-in was cancelled.';
+      if (/not found|404/i.test(m)) return 'Nothing found at that ID or URL.';
+      if (/token|permission|403|401/i.test(m)) return 'You do not have access to this item. Sign in with an account that can see it.';
+      if (/unsupported|not supported/i.test(m)) return 'This kind of layer cannot be shown in a 3D scene.';
+      return m;
+    }
+
+    $('#btnLayer').onclick = () => {
+      $('#layerErr').hidden = true; $('#layerSrc').value = ''; $('#layerName').value = '';
+      renderLayerList(); openModal('#layerModal');
+    };
+    $('#layerForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('#btnAddLayer');
+      btn.disabled = true; btn.textContent = 'Adding…';
+      $('#layerErr').hidden = true;
+      try { await addCustom($('#layerSrc').value, $('#layerName').value); $('#layerSrc').value = ''; $('#layerName').value = ''; }
+      catch (err) { const el = $('#layerErr'); el.textContent = friendlyLayerError(err); el.hidden = false; }
+      finally { btn.disabled = false; btn.textContent = 'Add'; }
+    };
+
+    renderLayerMeta();
+    view.when(() => {
+      scene.ready = true;
+      loadMesh();
+    }, (err) => {
+      showBanner(`<strong>The 3D scene could not start.</strong><p>${escapeHtml(err.message || 'Your browser may not support WebGL2.')}</p>`, true);
+    });
+
+    // ---- clicking in the scene
+    view.on('click', async (e) => {
+      if (e.button === 2) return;
+      const expecting = !!pendingFor('scene');
+      if (!expecting) {
+        const m = markerNear(e.x, e.y);
+        if (m) { select(m.id); return; }
+      }
+      let res;
+      try { res = await view.hitTest(e, { exclude: [camLayer] }); }
+      catch { return; }
+      const surf = res.results.find(r => r.mapPoint && !(r.graphic && r.graphic.layer === camLayer));
+      // An integrated mesh is part of the ground surface in a SceneView, so a mesh
+      // click is reported as a ground hit. Only the empty globe (no mesh, no
+      // elevation layer) is rejected; it sits at exactly 0 m.
+      let mp = surf && surf.mapPoint;
+      if (!mp && res.ground && res.ground.mapPoint) {
+        const g = res.ground, z = g.mapPoint.z ?? 0;
+        const onLayer = !!g.layer && (g.layer === mesh.layer || custom.some(c => c.layer === g.layer));
+        if (onLayer || map.ground.layers.length > 0 || Math.abs(z) > 0.5) mp = g.mapPoint;
+      }
+      if (!mp) { toast('That spot is outside the mesh. Click on a building or the street surface.', true); return; }
+      let x = mp.x, y = mp.y;
+      if (!mp.spatialReference.isWebMercator) [x, y] = Solver.lonLatToMerc(mp.longitude, mp.latitude);
+      placeScene(x, y, mp.z ?? 0);
+    });
+
+    // ---- graphics
+    const hex = (c, a = 1) => { const n = parseInt(c.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a]; };
+    // Point markers are drawn on a canvas over the scene instead of as 3D symbols.
+    // 3D symbols disappear whenever the mesh covers their anchor (common in the
+    // nooks of a photogrammetric mesh); the overlay always shows every point and
+    // only dims the ones the mesh hides from the current viewpoint.
+    const mcan = $('#sceneMarkers'), mctx = mcan.getContext('2d');
+    let screenMarks = [];
+    const occluded = new Map();
+    const D2R = Math.PI / 180;
+    function camFrame() {
+      const cam = view.camera; if (!cam) return null;
+      const cp = cam.position;
+      const [cx, cy] = cp.spatialReference.isWebMercator ? [cp.x, cp.y] : Solver.lonLatToMerc(cp.longitude, cp.latitude);
+      const k = Math.cos(cp.latitude * D2R); // Web Mercator to meters
+      const h = cam.heading * D2R, t = cam.tilt * D2R;
+      return { cx, cy, cz: cp.z, k, f: [Math.sin(h) * Math.sin(t), Math.cos(h) * Math.sin(t), -Math.cos(t)] };
+    }
+    function drawSceneMarkers() {
+      const dpr = window.devicePixelRatio || 1, W = view.width, H = view.height;
+      if (!W || !H) return;
+      if (mcan.width !== Math.round(W * dpr) || mcan.height !== Math.round(H * dpr)) { mcan.width = Math.round(W * dpr); mcan.height = Math.round(H * dpr); }
+      mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      mctx.clearRect(0, 0, W, H);
+      screenMarks = [];
+      const F = camFrame(); if (!F) return;
+      const res = residualMap();
+      const pts = state.points.filter(p => p.x != null).sort((a, b) => (a.id === state.selected) - (b.id === state.selected));
+      for (const p of pts) {
+        const d = [(p.x - F.cx) * F.k, (p.y - F.cy) * F.k, p.z - F.cz];
+        if (d[0] * F.f[0] + d[1] * F.f[1] + d[2] * F.f[2] <= 0) continue; // behind the camera
+        const sp = view.toScreen(new Point({ x: p.x, y: p.y, z: p.z, spatialReference: SR }));
+        if (!sp || sp.x < -40 || sp.y < -40 || sp.x > W + 40 || sp.y > H + 40) continue;
+        screenMarks.push({ id: p.id, x: sp.x, y: sp.y, dist: Math.hypot(d[0], d[1], d[2]) });
+        drawMarker(mctx, sp.x, sp.y, p, pointColor(p, res.get(p.id)), {
+          selected: p.id === state.selected, pending: !isComplete(p), occluded: state.dimHidden && !!occluded.get(p.id),
+        });
+      }
+    }
+    function markerNear(x, y) {
+      let best = null, bd = 14;
+      for (const m of screenMarks) { const d = Math.hypot(m.x - x, m.y - y); if (d < bd) { bd = d; best = m; } }
+      return best;
+    }
+    // After the view settles, test which markers the mesh hides. Both the marker
+    // depth and the depth of whatever the ray hits first are computed the same
+    // way from 3D coordinates, so the comparison does not depend on how ArcGIS
+    // reports its own hit distances.
+    let occTimer = null, occRun = 0;
+    function scheduleOcclusion() { clearTimeout(occTimer); if (state.dimHidden) occTimer = setTimeout(checkOcclusion, 180); }
+    const depthOf = (F, mp) => {
+      let x = mp.x, y = mp.y;
+      if (!mp.spatialReference.isWebMercator) [x, y] = Solver.lonLatToMerc(mp.longitude, mp.latitude);
+      return Math.hypot((x - F.cx) * F.k, (y - F.cy) * F.k, (mp.z ?? 0) - F.cz);
+    };
+    async function firstHitDepth(F, x, y) {
+      const r = await view.hitTest({ x, y }, { exclude: [camLayer] });
+      let best = Infinity;
+      for (const h of r.results) if (h.mapPoint) best = Math.min(best, depthOf(F, h.mapPoint));
+      if (r.ground && r.ground.mapPoint) best = Math.min(best, depthOf(F, r.ground.mapPoint));
+      return best;
+    }
+    async function checkOcclusion() {
+      if (!view.stationary || !state.dimHidden) return;
+      const run = ++occRun;
+      const F = camFrame(); if (!F) return;
+      const marks = screenMarks.slice();
+      const next = new Map();
+      const diag = Math.hypot(view.width, view.height);
+      const halfFov = (view.camera.fov || 55) * D2R / 2;
+      for (const m of marks) {
+        // metres covered by one pixel at the marker's depth
+        const px = 2 * m.dist * Math.tan(halfFov) / diag;
+        const tol = Math.max(0.75, 4 * px, 0.005 * m.dist);
+        let visible = false;
+        // the centre pixel first, then a small ring: corners and edges are visible
+        // if any nearby ray reaches the point
+        for (const [dx, dy] of [[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3]]) {
+          let d;
+          try { d = await firstHitDepth(F, m.x + dx, m.y + dy); } catch { d = Infinity; }
+          if (run !== occRun || !view.stationary) return; // the view moved; a newer check follows
+          if (d >= m.dist - tol) { visible = true; break; }
+        }
+        next.set(m.id, !visible);
+      }
+      occluded.clear(); next.forEach((v, k) => occluded.set(k, v));
+      drawSceneMarkers();
+    }
+    reactiveUtils.watch(() => view.camera, drawSceneMarkers);
+    reactiveUtils.watch(() => [view.width, view.height], drawSceneMarkers);
+    reactiveUtils.watch(() => view.stationary, (st) => {
+      if (st) scheduleOcclusion();
+      else { occRun++; if (occluded.size) { occluded.clear(); drawSceneMarkers(); } }
+    });
+    scene.syncGraphics = () => { drawSceneMarkers(); scheduleOcclusion(); };
+    $('#optDim').onchange = (e) => {
+      state.dimHidden = e.target.checked;
+      occluded.clear(); drawSceneMarkers(); scheduleOcclusion();
+    };
+    scene.syncCamera = () => {
+      camLayer.removeAll();
+      if (!solved()) return;
+      const { apex, corners } = state.sol.frustum;
+      const [a, b, c, d] = corners;
+      camLayer.add(new Graphic({
+        geometry: new Polyline({ paths: [[apex, a], [apex, b], [apex, c], [apex, d], [a, b, c, d, a]], spatialReference: SR, hasZ: true }),
+        symbol: { type: 'line-3d', symbolLayers: [{ type: 'line', size: 1.6, material: { color: hex(COLORS.fixer, 0.95) } }] },
+      }));
+      // top edge marker so "up" in the photo is visible in 3D
+      camLayer.add(new Graphic({
+        geometry: new Polyline({ paths: [[a, b]], spatialReference: SR, hasZ: true }),
+        symbol: { type: 'line-3d', symbolLayers: [{ type: 'line', size: 3.5, material: { color: hex(COLORS.fixer) } }] },
+      }));
+      camLayer.add(new Graphic({
+        geometry: new Point({ x: apex[0], y: apex[1], z: apex[2], spatialReference: SR }),
+        symbol: {
+          type: 'point-3d',
+          symbolLayers: [
+            { type: 'icon', size: 15, resource: { primitive: 'circle' }, material: { color: hex(COLORS.fixer) }, outline: { color: hex(COLORS.ink), size: 1.5 } },
+          ],
+        },
+      }));
+    };
+    scene.goToPoints = (pts) => {
+      const geoms = pts.filter(p => p.x != null).map(p => new Point({ x: p.x, y: p.y, z: p.z, spatialReference: SR }));
+      if (geoms.length) view.when(() => view.goTo(geoms, { duration: 1000 })).catch(() => {});
+    };
+    // fly to about 60 m from the point, keeping the current viewing direction
+    scene.goToPoint = (p) => {
+      const cam = view.camera;
+      const heading = cam.heading;
+      const tilt = Math.min(78, Math.max(45, cam.tilt));
+      const D = 60, h = heading * Math.PI / 180, t = tilt * Math.PI / 180;
+      const [, lat] = Solver.mercToLonLat(p.x, p.y);
+      const k = Math.cos(lat * Math.PI / 180); // meters to Web Mercator units: divide by k
+      const f = [Math.sin(h) * Math.sin(t), Math.cos(h) * Math.sin(t), -Math.cos(t)];
+      const position = new Point({ x: p.x - f[0] * D / k, y: p.y - f[1] * D / k, z: p.z - f[2] * D, spatialReference: SR });
+      view.goTo(new Camera({ position, heading, tilt, fov: cam.fov }), { duration: 900 }).catch(() => {});
+    };
+
+    // ---- view from the solved camera
+    const savedConstraints = {};
+    function overlayGeometry() {
+      const c = state.sol.camera;
+      const Vw = view.width, Vh = view.height;
+      const s = Math.min(Vw / state.W, Vh / state.H);
+      const fovDiag = 2 * Math.atan(Math.hypot(Vw, Vh) / 2 / (c.f * s)) * R2D; // ArcGIS camera fov is diagonal
+      return { s, Vw, Vh, fov: Math.min(170, Math.max(1, fovDiag)), clamped: fovDiag > 170 || fovDiag < 1 };
+    }
+    function layoutOverlay() {
+      if (!state.cameraMode || !solved()) return;
+      const c = state.sol.camera;
+      const { s, Vw, Vh } = overlayGeometry();
+      const img = $('#overlayImg');
+      img.style.width = state.W + 'px';
+      img.style.height = state.H + 'px';
+      img.style.left = (Vw / 2) + 'px';
+      img.style.top = (Vh / 2) + 'px';
+      // view center = principal point; the scene camera has no roll, so the photo is rotated instead
+      img.style.transform = `rotate(${c.roll}deg) scale(${s}) translate(${-c.cx}px, ${-c.cy}px)`;
+    }
+    // Every constraint change is guarded: if a property is missing in this
+    // ArcGIS version, the camera must still move.
+    const setConstraint = (fn) => { try { fn(); } catch (err) { console.warn('Constraint not available', err); } };
+    let cameraBefore = null;
+
+    // Clip the mesh in a circle around the solved camera, so a camera standing
+    // in a window or a nook is not blocked by the mesh around it.
+    let clipRadius = 0;
+    $('#clipRadius').value = clipRadius;
+    const clipLabel = () => { $('#clipValue').textContent = clipRadius ? `${clipRadius} m` : 'off'; paintRange($('#clipRadius')); };
+    clipLabel();
+    function circlePolygon(c, r) {
+      const R = r / Math.cos(c.lat * Math.PI / 180); // meters to Web Mercator units
+      const ring = [];
+      for (let i = 0; i <= 64; i++) { const a = -i / 64 * 2 * Math.PI; ring.push([c.x + R * Math.cos(a), c.y + R * Math.sin(a)]); }
+      return new Polygon({ rings: [ring], spatialReference: SR });
+    }
+    function applyClip() {
+      const on = state.cameraMode && clipRadius > 0 && solved();
+      const poly = on ? circlePolygon(state.sol.camera, clipRadius) : null;
+      for (const l of [mesh.layer, ...custom.map(c => c.layer)]) {
+        if (!l) continue;
+        try {
+          if (/integrated-mesh/.test(l.type) && 'modifications' in l) {
+            l.modifications = on ? new SceneModifications([new SceneModification({ geometry: poly, type: 'clip' })]) : null;
+          } else if (l.type === 'scene' && 'filter' in l) {
+            l.filter = on ? { geometries: [poly], spatialRelationship: 'disjoint' } : null;
+          }
+        } catch (err) { console.warn('Could not clip', l.title, err); }
+      }
+    }
+    $('#clipRadius').addEventListener('input', (e) => {
+      clipRadius = +e.target.value; clipLabel(); applyClip();
+    });
+    scene.applyCameraView = (animate) => {
+      if (!solved()) return;
+      const c = state.sol.camera;
+      if (!cameraBefore) {
+        cameraBefore = view.camera.clone();
+        setConstraint(() => { savedConstraints.collision = view.constraints.collision.enabled; });
+        setConstraint(() => { savedConstraints.tiltMode = view.constraints.tilt.mode; savedConstraints.tiltMax = view.constraints.tilt.max; });
+        setConstraint(() => { savedConstraints.nav = (map.ground.navigationConstraint && map.ground.navigationConstraint.type) || 'stay-above'; });
+      }
+      // let the camera sit exactly where it was solved, even below the mesh or ground surface
+      setConstraint(() => { map.ground.navigationConstraint = { type: 'none' }; });
+      applyClip();
+      setConstraint(() => { view.constraints.collision.enabled = false; });
+      setConstraint(() => { view.constraints.tilt.mode = 'manual'; view.constraints.tilt.max = 179.9; });
+      const { fov, clamped } = overlayGeometry();
+      const cam = new Camera({ position: new Point({ x: c.x, y: c.y, z: c.z, spatialReference: SR }), heading: c.heading, tilt: c.tilt, fov });
+      // the photo appears only once the scene looks through the solved camera
+      $('#overlayWrap').hidden = true;
+      const arrived = () => {
+        if (!state.cameraMode) return;
+        const p = view.camera.position;
+        const off = Math.hypot((p.x - c.x) * Math.cos(c.lat * Math.PI / 180), (p.y - c.y) * Math.cos(c.lat * Math.PI / 180), p.z - c.z);
+        layoutOverlay();
+        $('#overlayWrap').hidden = false;
+        if (off > 1) toast(`The scene kept the camera ${off.toFixed(1)} m away from the solved position, so the overlay may be offset. Try Clip mesh.`, true);
+        else if (Math.abs(view.camera.tilt - c.tilt) > 0.5) toast('The scene limited the camera tilt, so the overlay may be offset', true);
+        else if (clamped) toast('Field of view is outside the scene\'s range, so the overlay may be offset', true);
+      };
+      const jump = () => {
+        try { view.camera = cam; arrived(); }
+        catch (err) { console.error(err); toast(`Could not move the scene camera: ${err.message || err}`, true); exitCameraMode(); }
+      };
+      view.goTo(cam, { animate, duration: 1100 }).then(arrived).catch((err) => {
+        if (!state.cameraMode) return;
+        if (err && err.name === 'AbortError') return; // replaced by a newer move
+        console.warn('goTo failed, setting the camera directly', err);
+        jump();
+      });
+    };
+    scene.releaseCameraView = () => {
+      setConstraint(() => { if (savedConstraints.collision != null) view.constraints.collision.enabled = savedConstraints.collision; });
+      setConstraint(() => {
+        if (savedConstraints.tiltMode) {
+          view.constraints.tilt.mode = savedConstraints.tiltMode;
+          if (savedConstraints.tiltMode === 'manual') view.constraints.tilt.max = savedConstraints.tiltMax;
+        }
+      });
+      setConstraint(() => { if (savedConstraints.nav) map.ground.navigationConstraint = { type: savedConstraints.nav }; delete savedConstraints.nav; });
+      applyClip();
+      // return to where the user was before
+      if (cameraBefore) view.goTo(cameraBefore, { duration: 800 }).catch(() => { view.camera = cameraBefore; });
+      cameraBefore = null;
+    };
+    // keep the scene locked while the photo is overlaid
+    const lock = (e) => { if (state.cameraMode) e.stopPropagation(); };
+    ['drag', 'mouse-wheel', 'double-click', 'key-down', 'hold'].forEach(t => view.on(t, lock));
+    reactiveUtils.watch(() => [view.width, view.height], () => { if (state.cameraMode) scene.applyCameraView(false); });
+
+    scene.syncGraphics();
+    scene.syncCamera();
+  }, (err) => {
+    showBanner(`<strong>The 3D scene could not load.</strong><p>${escapeHtml(err.message || String(err))}</p>`, true);
+  });
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// first paint: put every control at its default. Browsers restore form
+// controls on reload, which would disagree with the app's actual state.
+$('#optDim').checked = state.dimHidden;
+$('#optLoupe').checked = state.loupe;
+$('#optPP').checked = state.opts.freePP;
+$('#optK1').checked = state.opts.k1;
+$('#overlayOpacity').value = 55;
+$('#overlayOpacity').dispatchEvent(new Event('input'));
+$('#clipRadius').value = 0;
+paintRange($('#clipRadius'));
+$('#optLoupe').onchange = (e) => { state.loupe = e.target.checked; drawPhoto(); };
+renderAll();
+renderSolution();
+})();
+</script>
+</body>
+</html>
