@@ -8,11 +8,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=JetBrains+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/dark/main.css">
 <style>
-/* Layout: two working panes (photo | 3D scene) over a results dock.
+/* Standpoint styles
+   Layout: two working panes (photo | 3D scene) over a results dock.
    Darkroom palette: warm graphite so photographs read true; safelight amber
-   marks what you measured, fixer cyan marks what the solver computed. */
+   marks what you measured, fixer cyan marks what the solver computed.
+   Sections: tokens · shell · buttons · workspace · photo pane · scene pane ·
+   camera view · dock · points table · switches · solution · dialogs ·
+   tooltips and messages · small screens */
 :root {
   --bg: #121110;
   --panel: #191816;
@@ -28,9 +31,12 @@
   --safelight-soft: rgba(242, 165, 65, 0.14);
   --fixer: #7cc8da;
   --fixer-soft: rgba(124, 200, 218, 0.14);
+  --tip-safe-bg: #261e14;
+  --tip-safe-line: rgba(242, 165, 65, 0.42);
+  --tip-fixer-bg: #16201f;
+  --tip-fixer-line: rgba(124, 200, 218, 0.42);
   --bad: #ef6b55;
   --bad-soft: rgba(239, 107, 85, 0.14);
-  --good: #a3d07f;
 
   --font-ui: "Archivo", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -66,7 +72,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--muted);
 }
 
-/* ---------- app shell ---------- */
+/* ---------- shell ---------- */
 .app {
   height: 100%;
   display: grid;
@@ -154,6 +160,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .icon-btn svg { width: 15px; height: 15px; }
 .icon-btn.danger:hover { color: var(--bad); }
 :focus-visible { outline: 2px solid var(--safelight); outline-offset: 2px; }
+[data-tone="fixer"] :focus-visible { outline-color: var(--fixer); }
 
 /* ---------- workspace ---------- */
 .workspace {
@@ -263,6 +270,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 7px 14px;
   border-radius: 999px;
   background: rgba(18, 17, 16, .86);
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   border: 1px solid var(--line-strong);
   font-size: var(--fs-sm);
@@ -280,6 +288,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* scene pane */
 #viewDiv { position: absolute; inset: 0; }
 #viewDiv.is-placing canvas { cursor: crosshair !important; }
+#viewDiv.is-looking canvas { cursor: grab !important; }
+#viewDiv.is-looking canvas:active { cursor: grabbing !important; }
+/* our two extra navigation buttons are built like ArcGIS's own (calcite-button);
+   "Look around" shows its on state with an amber ring and icon */
+.sp-nav.is-active > * {
+  outline: 2px solid var(--safelight); outline-offset: -2px;
+  --calcite-button-icon-color: var(--safelight); --calcite-button-text-color: var(--safelight);
+  color: var(--safelight);
+}
+/* used only if the Calcite button or its icon is unavailable; ArcGIS dark theme colors */
+.sp-nav-fallback {
+  width: 32px; height: 32px; padding: 0; border: 0;
+  display: grid; place-items: center;
+  background: #242424; color: #adadad; cursor: pointer;
+}
+.sp-nav-fallback:hover { background: #2f2f2f; color: #fff; }
+.sp-nav-fallback svg { width: 16px; height: 16px; }
 .overlay-wrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
 #overlayImg { position: absolute; transform-origin: 0 0; max-width: none; opacity: .55; image-rendering: auto; }
 .scene-banner {
@@ -298,6 +323,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .scene-banner strong { color: var(--text); font-weight: 600; }
 .scene-banner .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .scene-banner.is-error { border-color: var(--bad); }
+/* ---------- camera view ---------- */
 .camera-hud {
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
   display: grid; gap: 8px;
@@ -313,23 +339,29 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .camera-hud .tag { color: var(--fixer); font-weight: 600; }
 .hud-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.hud-head kbd { font: 500 10px var(--font-mono); opacity: .7; margin-left: 4px; }
+.hud-btns { display: flex; gap: 4px; }
 .hud-controls { display: flex; flex-wrap: wrap; gap: 8px 28px; }
 .hud-ctl { display: flex; align-items: center; gap: 10px; color: var(--muted); white-space: nowrap; }
-.hud-ctl label { color: var(--muted); }
-.hud-val { min-width: 40px; text-align: right; color: var(--text); font-size: 11.5px; }
-.info-dot {
-  width: 16px; height: 16px; padding: 0; margin-left: -4px;
-  display: inline-grid; place-items: center;
-  border-radius: 50%; border: 1px solid var(--line-strong); background: transparent;
-  font: 600 10px/1 var(--font-mono); color: var(--muted); cursor: pointer;
+/* a label that is also a control: dotted underline signals it does something */
+.hud-label {
+  padding: 1px 0; border: 0; background: none; font: inherit; color: var(--muted);
+  text-decoration: underline dotted rgba(124,200,218,.5); text-underline-offset: 3px;
+  cursor: pointer;
 }
-.info-dot:hover, .info-dot[aria-expanded="true"] { color: var(--fixer); border-color: var(--fixer); }
-.hud-info {
-  max-width: 420px; padding: 8px 10px; border-radius: 6px;
-  background: var(--fixer-soft); border: 1px solid rgba(124,200,218,.35);
-  color: var(--text); font-size: 12px; line-height: 1.45; white-space: normal;
+.hud-label:hover { color: var(--fixer); text-decoration-color: var(--fixer); }
+.hud-val {
+  min-width: 48px; height: 22px; padding: 0 5px;
+  border: 1px solid transparent; border-radius: 4px; background: none;
+  text-align: right; color: var(--text); font: 500 11.5px var(--font-mono);
+  cursor: text;
 }
+.hud-val:hover { border-color: var(--line-strong); }
+.hud-val-input {
+  width: 56px; height: 22px; padding: 0 5px;
+  border: 1px solid var(--fixer); border-radius: 4px; background: var(--sunken);
+  text-align: right; color: var(--text); font: 500 11.5px var(--font-mono);
+}
+.hud-val-input:focus { outline: none; box-shadow: 0 0 0 3px var(--fixer-soft); }
 /* slim range: thin track, solid cyan knob with a dark ring */
 input[type=range].slim { -webkit-appearance: none; appearance: none; width: 130px; height: 18px; background: transparent; margin: 0; cursor: pointer; }
 input[type=range].slim::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, rgba(124,200,218,.55) var(--fill, 0%), var(--line-strong) var(--fill, 0%)); }
@@ -341,13 +373,6 @@ input[type=range].slim:hover::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(-
 input[type=range].slim:hover::-moz-range-thumb { box-shadow: 0 0 0 1px var(--fixer), 0 0 0 5px var(--fixer-soft); }
 input[type=range].slim:focus-visible { outline: none; }
 input[type=range].slim:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--fixer), 0 0 0 5px var(--fixer-soft); }
-
-select.select {
-  height: 28px; padding: 0 26px 0 10px;
-  border-radius: 5px; border: 1px solid var(--line-strong);
-  background: var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a0978a' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center;
-  appearance: none; font-size: var(--fs-sm); cursor: pointer;
-}
 
 /* ---------- dock ---------- */
 .dock {
@@ -363,12 +388,25 @@ select.select {
   min-height: 44px; padding: 6px 10px 6px 16px;
   border-bottom: 1px solid var(--line);
 }
+.panel-camera { grid-template-rows: auto auto minmax(0, 1fr); container-type: inline-size; }
+.head-actions { display: flex; gap: 4px; flex-wrap: nowrap; margin-left: auto; }
+.narrow-only { display: none; }
+@container (max-width: 640px) {
+  .head-actions .wide-only { display: none; }
+  .head-actions .narrow-only { display: inline; }
+}
+.panel-sub {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px;
+  min-height: 36px; padding: 4px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-sub .label { font-size: 10.5px; color: var(--faint); }
 .panel-title { font-size: var(--fs-lg); font-weight: 700; font-stretch: 110%; letter-spacing: -0.005em; }
 .panel-head .spacer { flex: 1; }
 .panel-body { overflow: auto; min-height: 0; }
 .count { font: 500 12px var(--font-mono); color: var(--muted); }
 
-/* points table */
+/* ---------- points table ---------- */
 .ptable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .ptable th {
   position: sticky; top: 0; z-index: 1; width: 1%;
@@ -382,17 +420,14 @@ select.select {
 .ptable td { padding: 5px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; width: 1%; }
 .ptable td.coord { font-size: 12px; }
 /* data columns hug their content; the empty fill column takes the spare width */
-.ptable .c-fill { padding: 0; }
 /* gaps between the photo, scene and fit groups grow with the panel, up to a cap;
    the fill before the row buttons takes whatever is left, so it stays the widest */
 .ptable .c-gap { width: 5%; padding: 0; }
-.ptable .c-fill { width: 12%; }
+.ptable .c-fill { width: 12%; padding: 0; }
 @media (max-width: 1440px) {
   .ptable th, .ptable td { padding-left: 10px; padding-right: 10px; }
   .ptable .c-gap { padding: 0; }
 }
-.ptable .c-id { padding-left: 16px; }
-.ptable .c-actions { padding-right: 12px; }
 .ptable thead tr.grp th { height: 26px; padding-top: 8px; padding-bottom: 2px; border-bottom: 0; }
 .ptable thead tr.grp th.g { color: var(--muted); box-shadow: inset 0 -1px 0 var(--line-strong); text-align: center; }
 .ptable thead tr.sub th { top: 26px; box-shadow: inset 0 -1px 0 var(--line); border-bottom: 0; }
@@ -402,8 +437,8 @@ select.select {
 .ptable tbody tr:hover { background: rgba(255,255,255,.025); }
 .ptable tbody tr.is-selected { background: var(--safelight-soft); }
 .ptable tbody tr.is-off td:not(:first-child):not(:last-child) { opacity: .45; }
-.ptable .c-id { width: 1%; }
-.ptable .c-actions { width: 1%; text-align: right; }
+.ptable .c-id { width: 1%; padding-left: 16px; }
+.ptable .c-actions { width: 1%; padding-right: 12px; text-align: right; }
 .pid {
   display: inline-grid; place-items: center;
   min-width: 24px; height: 20px; padding: 0 5px;
@@ -417,7 +452,6 @@ select.select {
 .missing { color: var(--faint); font-style: italic; font-family: var(--font-ui); }
 .missing.is-next { color: var(--safelight); font-style: normal; }
 .coord { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; }
-.coord .dim { color: var(--faint); }
 .resid { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .resid .bar { width: 46px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .resid .bar i { display: block; height: 100%; background: var(--fixer); border-radius: 3px; }
@@ -429,12 +463,15 @@ select.select {
 .empty-table ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 .empty-table li::marker { color: var(--safelight); font-family: var(--font-mono); font-size: 12px; }
 
-/* solution */
-.switch { display: inline-flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; user-select: none; }
+/* ---------- switches ---------- */
 /* Switches take the accent of where they live: safelight amber for the photo,
    scene and layer controls, fixer cyan inside the Camera panel. Off is a hollow
    track with a dim knob, so the two states differ in shape as well as color. */
-.switch { --switch-on: var(--safelight); --switch-knob: var(--safelight-ink); }
+.switch {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: var(--fs-sm); color: var(--muted); cursor: pointer; user-select: none;
+  --switch-on: var(--safelight); --switch-knob: var(--safelight-ink);
+}
 .switch.is-fixer { --switch-on: var(--fixer); --switch-knob: var(--sunken); }
 .switch input {
   appearance: none; flex: none;
@@ -455,7 +492,7 @@ select.select {
 .switch:has(input:checked) { color: var(--text); }
 .switch:hover { color: var(--text); }
 
-
+/* ---------- solution ---------- */
 .sol { padding: 14px 16px 16px; display: grid; gap: 14px; align-content: start; }
 .quality { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
 .quality .q { display: grid; gap: 1px; }
@@ -494,7 +531,6 @@ select.select {
 .warn strong { color: var(--safelight); font-weight: 600; }
 .warn.is-bad { border-color: rgba(239,107,85,.45); background: var(--bad-soft); }
 .warn.is-bad strong { color: var(--bad); }
-.sol-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .sol-note { font-size: 11.5px; color: var(--faint); margin: 0; }
 
 .progress { display: grid; gap: 10px; }
@@ -506,7 +542,7 @@ select.select {
 .progress p strong { color: var(--text); font-weight: 600; }
 .tips { margin: 0; padding-left: 18px; color: var(--muted); font-size: var(--fs-sm); display: grid; gap: 3px; }
 
-/* ---------- modal & toast ---------- */
+/* ---------- dialogs ---------- */
 .modal-back {
   position: fixed; inset: 0; z-index: 50;
   background: rgba(8, 7, 6, .62);
@@ -593,6 +629,24 @@ select.select {
 .layer-list .lname .lproblem { color: var(--bad); white-space: normal; overflow: visible; font-size: 11.5px; line-height: 1.35; }
 .layer-list li.has-problem { background: var(--bad-soft); }
 
+/* ---------- tooltips and messages ---------- */
+.tip {
+  position: fixed; left: 0; top: 0; z-index: 90;
+  max-width: 320px; padding: 8px 10px; border-radius: 6px;
+  background: var(--tip-safe-bg); border: 1px solid var(--tip-safe-line);
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  color: var(--text); font-size: 12px; line-height: 1.45; white-space: normal;
+  pointer-events: none; opacity: 0; transition: opacity .1s;
+}
+.tip.is-on { opacity: 1; }
+.tip[data-tone="fixer"] { background: var(--tip-fixer-bg); border-color: var(--tip-fixer-line); }
+.tip b { display: block; margin-bottom: 2px; font-weight: 600; color: var(--safelight); }
+.tip[data-tone="fixer"] b { color: var(--fixer); }
+.tip kbd {
+  display: inline-block; margin-left: 6px;
+  font: 500 10.5px var(--font-mono); padding: 0 5px; border-radius: 3px;
+  border: 1px solid var(--line-strong); color: var(--text); background: var(--raised);
+}
 .toast {
   /* sits over the working panels, just below their bars, where the eye already is */
   position: fixed; left: 50%; top: 112px; transform: translate(-50%, -8px);
@@ -618,7 +672,8 @@ select.select {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
-/* ---------- narrow screens ---------- */
+/* ---------- small screens ---------- */
+/* tablets in portrait stack the two panes */
 @media (max-width: 900px) {
   body { overflow: auto; }
   html, body { height: auto; }
@@ -630,17 +685,38 @@ select.select {
   .panel + .panel { border-left: 0; border-top: 1px solid var(--line); }
   .panel-body { max-height: 70vh; }
   .steps { display: none; }
-  .topbar { flex-wrap: wrap; }
-  .top-actions { margin-left: auto; }
   .brand-sub { display: none; }
 }
-@media (max-width: 560px) {
-  .pane-bar .btn-sm span { display: none; }
-  .pane-bar .btn-sm { padding: 0 8px; }
+/* Phones (and very small windows) cannot fit a photo and a 3D scene side by
+   side, so they get a notice instead. Keep in sync with SMALL_SCREEN in app.js. */
+.small-screen { display: none; }
+@media (max-width: 767px), (max-height: 499px) {
+  html, body { height: 100%; overflow: hidden; }
+  .app, .modal-back, .toast, .tip { display: none !important; }
+  .small-screen {
+    display: grid; place-content: center; justify-items: center; gap: 14px;
+    height: 100%; padding: 24px max(24px, env(safe-area-inset-right, 0px)) 24px max(24px, env(safe-area-inset-left, 0px));
+    text-align: center;
+  }
+  .small-screen svg { width: 54px; height: 40px; }
+  .small-screen h1 { margin: 0; font-size: 24px; font-weight: 750; font-stretch: 112%; line-height: 1.15; text-wrap: balance; }
+  .small-screen p { margin: 0; max-width: 36ch; color: var(--muted); text-wrap: pretty; }
+  .small-screen .hint-line { font-size: var(--fs-sm); color: var(--faint); }
 }
 </style>
 </head>
 <body>
+<div class="small-screen" role="alert">
+  <svg viewBox="0 0 30 22" aria-hidden="true">
+    <path d="M4 11 L25 2 M4 11 L25 20" stroke="#7cc8da" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <rect x="23" y="1" width="4" height="20" rx="1" fill="#ece6db"/>
+    <circle cx="4" cy="11" r="3.4" fill="#f2a541"/>
+  </svg>
+  <h1>Standpoint needs a bigger screen</h1>
+  <p>Matching points between a photo and a 3D city model needs room for both side by side. Open Standpoint on a computer or a tablet.</p>
+  <p class="hint-line">On a computer, make the browser window larger. On a tablet, landscape works best.</p>
+</div>
+
 <div class="app">
   <header class="topbar">
     <div class="brand">
@@ -656,15 +732,15 @@ select.select {
     </div>
 
     <nav class="steps" id="steps" aria-label="Progress">
-      <div class="step" data-step="photo"><span class="step-dot">1</span>Photo</div>
+      <div class="step" data-step="photo" data-tip="Open the photo you want to locate"><span class="step-dot">1</span>Photo</div>
       <span class="step-sep"></span>
-      <div class="step" data-step="pairs"><span class="step-dot">2</span>Point pairs <b id="stepPairs"></b></div>
+      <div class="step" data-step="pairs" data-tip="Match features in the photo with the same features on the mesh. The camera needs at least 5 pairs."><span class="step-dot">2</span>Point pairs <b id="stepPairs"></b></div>
       <span class="step-sep"></span>
-      <div class="step" data-step="camera"><span class="step-dot">3</span>Camera</div>
+      <div class="step" data-step="camera" data-tip="Done when enough pairs give a solved camera"><span class="step-dot">3</span>Camera</div>
     </nav>
 
     <div class="top-actions">
-      <button class="icon-btn icon-btn-lg" id="btnHelp" type="button" title="How Standpoint works (?)" aria-label="Help">
+      <button class="icon-btn icon-btn-lg" id="btnHelp" type="button" aria-label="Help" data-tip="How Standpoint works" data-tip-key="?">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 7.2v5"/><circle cx="8" cy="4" r="1" fill="currentColor" stroke="none"/></svg>
       </button>
     </div>
@@ -678,14 +754,14 @@ select.select {
         <span class="label">Photo</span>
         <span class="meta" id="photoMeta">No photo loaded</span>
         <span class="spacer"></span>
-        <label class="switch" title="Show an enlarged view of the area under the cursor (M)"><input type="checkbox" id="optLoupe" checked>Magnifier</label>
+        <label class="switch" data-tip="Shows an enlarged view of the area under the cursor for exact placing" data-tip-key="M"><input type="checkbox" id="optLoupe" checked>Magnifier</label>
         <span class="bar-sep" aria-hidden="true"></span>
-        <button class="icon-btn" id="zoomOut" type="button" title="Zoom out (−)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8h9"/></svg></button>
+        <button class="icon-btn" id="zoomOut" type="button" aria-label="Zoom out" data-tip="Zoom out" data-tip-key="−"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8h9"/></svg></button>
         <span class="zoom-readout" id="zoomReadout">–</span>
-        <button class="icon-btn" id="zoomIn" type="button" title="Zoom in (+)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
-        <button class="icon-btn" id="zoomFit" type="button" title="Fit to pane (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/></svg></button>
+        <button class="icon-btn" id="zoomIn" type="button" aria-label="Zoom in" data-tip="Zoom in" data-tip-key="+"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
+        <button class="icon-btn" id="zoomFit" type="button" aria-label="Fit photo" data-tip="Fit the whole photo in the panel" data-tip-key="F"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/></svg></button>
         <span class="bar-sep" aria-hidden="true"></span>
-        <button class="btn btn-sm" id="btnOpen" type="button" title="Open a photograph">
+        <button class="btn btn-sm" id="btnOpen" type="button" data-tip="Open a photo from your computer. You can also drop or paste one into the panel.">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1.3"/><path d="M2 12l4-3.5 3 2.5 2.5-2 3 2.5"/></svg>
           <span>Open photo</span>
         </button>
@@ -711,12 +787,14 @@ select.select {
     <section class="pane" aria-label="3D scene">
       <div class="pane-bar">
         <span class="label">Scene</span>
-        <span class="meta mono" title="Coordinate system of picked points">EPSG:3857</span>
+        <span class="meta mono" data-tip="All scene coordinates are in Web Mercator (EPSG:3857)">EPSG:3857</span>
         <span class="meta" id="layerMeta">Loading 3D mesh…</span>
         <span class="spacer"></span>
-        <label class="switch" title="Draw points that the mesh hides from this viewpoint at half strength"><input type="checkbox" id="optDim" checked>Dim hidden points</label>
+        <label class="switch" data-tip="Draws points that the mesh hides from this viewpoint at half strength"><input type="checkbox" id="optDim" checked>Dim hidden points</label>
         <span class="bar-sep" aria-hidden="true"></span>
-        <button class="btn btn-sm" id="btnLayer" type="button" title="Show and add scene layers">
+        <button class="icon-btn" id="sceneFit" type="button" aria-label="Zoom to points" data-tip="Zoom to all points in use"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/></svg></button>
+        <span class="bar-sep" aria-hidden="true"></span>
+        <button class="btn btn-sm" id="btnLayer" type="button" data-tip="Show, hide and add scene layers">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.8 14 5 8 8.2 2 5z"/><path d="M2 8l6 3.2L14 8"/><path d="M2 11l6 3.2 6-3.2"/></svg>
           <span>Layers</span>
         </button>
@@ -726,26 +804,25 @@ select.select {
         <canvas id="sceneMarkers"></canvas>
         <div class="overlay-wrap" id="overlayWrap" hidden><img id="overlayImg" alt=""></div>
         <div class="scene-banner" id="sceneBanner" hidden></div>
-        <div class="camera-hud" id="cameraHud" hidden>
+        <div class="camera-hud" id="cameraHud" data-tone="fixer" hidden>
           <div class="hud-head">
             <span class="tag">Through the solved camera</span>
-            <button class="btn btn-ghost btn-sm" id="btnExitCamera" type="button">Exit <kbd>Esc</kbd></button>
+            <span class="hud-btns">
+              <button class="btn btn-ghost btn-sm" id="btnExplore" type="button" data-tip-title="Explore from here" data-tip="Unlocks navigation and keeps the scene at the camera position, so you can look around from the photographer's spot. The field of view returns to the scene default.">Explore from here</button>
+              <button class="btn btn-ghost btn-sm" id="btnExitCamera" type="button" data-tip="Return to the view you had before" data-tip-key="Esc">Exit</button>
+            </span>
           </div>
           <div class="hud-controls">
             <div class="hud-ctl">
-              <label for="overlayOpacity">Photo opacity</label>
-              <input type="range" class="slim" id="overlayOpacity" min="0" max="100" value="55">
-              <span class="hud-val mono" id="opacityValue">55%</span>
+              <button class="hud-label" type="button" id="opacityToggle" data-tip-title="Photo opacity" data-tip="Click to jump between 0% and 100%, and keep clicking to compare the photo with the scene. Drag the slider for anything in between.">Photo opacity</button>
+              <input type="range" class="slim" id="overlayOpacity" min="0" max="100" value="55" aria-label="Photo opacity">
+              <button class="hud-val" type="button" id="opacityValue" data-tip="Click to type an exact value">55%</button>
             </div>
             <div class="hud-ctl">
-              <label for="clipRadius">Clip mesh</label>
-              <button class="info-dot" type="button" id="clipInfoBtn" aria-expanded="false" aria-controls="clipInfo" title="What does this do?">i</button>
-              <input type="range" class="slim" id="clipRadius" min="0" max="100" step="1" value="0">
-              <span class="hud-val mono" id="clipValue">off</span>
+              <button class="hud-label" type="button" id="clipToggle" data-tip-title="Clip mesh" data-tip="Removes the mesh within this distance around the camera, so walls or a window frame around the camera spot don't block the view. It cuts a vertical cylinder, so use the smallest radius that clears the view. Click to switch the clip off and back to the last radius. The mesh comes back when you leave the camera view.">Clip mesh</button>
+              <input type="range" class="slim" id="clipRadius" min="0" max="100" step="1" value="0" aria-label="Clip mesh radius">
+              <button class="hud-val" type="button" id="clipValue" data-tip="Click to type an exact value. Typed values can go beyond the slider's 100 m.">off</button>
             </div>
-          </div>
-          <div class="hud-info" id="clipInfo" role="note" hidden>
-            Removes the mesh within this distance around the camera, so walls or a window frame enclosing the camera spot don't block the view. It cuts a vertical cylinder, so use the smallest radius that clears the view. The mesh comes back when you exit.
           </div>
         </div>
         <div class="hint" id="sceneHint" hidden></div>
@@ -753,7 +830,7 @@ select.select {
     </section>
   </main>
 
-  <div class="hsplitter" id="dockSplitter" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom panels" tabindex="0" title="Drag to resize · double-click to reset"></div>
+  <div class="hsplitter" id="dockSplitter" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom panels" tabindex="0" data-tip="Drag to resize the bottom panels. Double-click to reset."></div>
 
   <!-- DOCK -->
   <section class="dock">
@@ -762,24 +839,35 @@ select.select {
         <span class="panel-title">Point pairs</span>
         <span class="count" id="pairCount">0</span>
         <span class="spacer"></span>
-        <button class="btn btn-ghost" id="btnImport" type="button" title="Paste points you saved earlier">
+        <button class="btn btn-ghost" id="btnImport" type="button" data-tip="Load point pairs from CSV or JSON. They replace the current list.">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2.8" width="10" height="11.7" rx="1.5"/><rect x="5.8" y="1.4" width="4.4" height="2.8" rx=".9"/><path d="M5.8 8.2h4.4M5.8 10.8h2.8"/></svg>Paste points
         </button>
-        <button class="btn btn-ghost" id="btnCopyCsv" type="button" title="Copy all point pairs as CSV">
+        <button class="btn btn-ghost" id="btnCopyCsv" type="button" data-tip="Copy all point pairs as CSV">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg>Copy CSV
         </button>
-        <button class="btn btn-ghost" id="btnClear" type="button" title="Remove all point pairs">Clear</button>
+        <button class="btn btn-ghost" id="btnClear" type="button" data-tip="Remove all point pairs">Clear</button>
       </div>
       <div class="panel-body" id="tableWrap"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel panel-camera" data-tone="fixer">
       <div class="panel-head">
         <span class="panel-title">Camera</span>
         <span class="pill" id="solPill">Waiting</span>
         <span class="spacer"></span>
-        <label class="switch is-fixer" title="Normally the camera looks through the exact middle of the photo. Turn on if the photo is cropped or shot with a shift lens, so the solver finds the true optical center. Needs 10+ well-spread pairs."><input type="checkbox" id="optPP">Free image center</label>
-        <label class="switch is-fixer" title="Corrects barrel or pincushion distortion that bends straight lines, common with wide-angle lenses. Turn on if errors grow toward the photo edges. Needs pairs near the edges."><input type="checkbox" id="optK1">Lens distortion</label>
+        <span class="head-actions">
+        <button class="btn btn-fixer btn-sm" type="button" id="btnCameraView" disabled data-tip="Look at the scene through the solved camera, with the photo laid over it">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>
+          <span>View from camera</span>
+        </button>
+        <button class="btn btn-ghost btn-sm" type="button" id="btnCopyCam" disabled data-tip="Copy the camera position, orientation, lens and precision as JSON"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><span class="wide-only">Copy camera</span><span class="narrow-only">Camera</span></button>
+        <button class="btn btn-ghost btn-sm" type="button" id="btnCopyAll" disabled data-tip="Copy the point pairs and the camera as JSON. Paste points loads it back."><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><span class="wide-only">Copy all</span><span class="narrow-only">All</span></button>
+        </span>
+      </div>
+      <div class="panel-sub">
+        <span class="label">Also solve</span>
+        <label class="switch is-fixer" data-tip-title="Free image center" data-tip="Normally the camera looks through the exact middle of the photo. Turn on if the photo is cropped or shot with a shift lens, so the solver finds the true optical center. Needs 10+ well-spread pairs."><input type="checkbox" id="optPP">Free image center</label>
+        <label class="switch is-fixer" data-tip-title="Lens distortion" data-tip="Corrects barrel or pincushion distortion that bends straight lines, common with wide-angle lenses. Turn on if errors grow toward the photo edges. Needs pairs near the edges."><input type="checkbox" id="optK1">Lens distortion</label>
       </div>
       <div class="panel-body" id="solWrap"></div>
     </div>
@@ -812,9 +900,9 @@ select.select {
   <div class="modal is-wide" role="dialog" aria-labelledby="helpTitle">
     <div class="help-head">
       <h3 id="helpTitle">How Standpoint works</h3>
-      <button class="icon-btn" type="button" data-close title="Close (Esc)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      <button class="icon-btn" type="button" data-close aria-label="Close" data-tip="Close" data-tip-key="Esc"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
     </div>
-    <p class="help-lede">Standpoint finds where a photograph was taken from and how the camera was pointed. You match features in the photo with the same features on the 3D mesh, and it solves the camera position, viewing direction and lens from those pairs.</p>
+    <p class="help-lede">Standpoint finds where a photograph was taken from and how the camera was pointed. You match features in the photo with the same features on the 3D mesh, and it solves the camera position, viewing direction and lens from those pairs. Hover over any control for a short explanation.</p>
     <div class="help-example">
       <div><b>Try the example</b><span>Loads a sample photo with its point pairs, so you see a solved camera right away.</span></div>
       <button class="btn btn-primary" type="button" id="btnExample">Load example</button>
@@ -834,7 +922,7 @@ select.select {
         <h4>Photo panel</h4>
         <ul>
           <li>Click to add a point. Drag a marker to adjust it.</li>
-          <li>Drag the empty photo to pan, scroll to zoom. <em>Fit</em> shows the whole photo.</li>
+          <li>Drag the empty photo to pan, scroll or pinch to zoom. <em>Fit</em> shows the whole photo.</li>
           <li><em>Magnifier</em> shows an enlarged view under the cursor for exact placing.</li>
           <li><span class="sw sw-amber"></span>paired point · <span class="sw sw-dash"></span>waiting for its scene position · <span class="sw sw-red"></span>suspect · <span class="sw sw-grey"></span>switched off.</li>
           <li>Once solved, a <span class="t-fixer">cyan line</span> runs from each marker to where the solved camera puts its 3D point. A <span class="t-fixer">dashed cyan ring</span> shows where a point placed only in the scene should be in the photo.</li>
@@ -844,7 +932,12 @@ select.select {
         <h4>Scene panel</h4>
         <ul>
           <li>Click on the mesh to place a point. Clicks outside the mesh are refused.</li>
-          <li>Drag to pan, right-drag to orbit, scroll to zoom. The buttons at the top right switch drag between pan and rotate.</li>
+          <li>Drag to pan. Right-drag to orbit around the view's center.</li>
+          <li>On a trackpad, orbit with a two-finger press and drag, or use the keys <kbd>A</kbd> <kbd>D</kbd> to rotate and <kbd>W</kbd> <kbd>S</kbd> to tilt. On a tablet, twist or drag two fingers.</li>
+          <li>Scroll to zoom in steps, or hold the middle mouse button and drag up or down to zoom smoothly toward the cursor.</li>
+          <li>Hold <kbd>B</kbd> and drag to look around from the camera's own position. <kbd>Shift</kbd> with the scroll wheel or middle-drag changes the field of view.</li>
+          <li>The <em>Fit</em> button in the scene bar zooms to all points in use.</li>
+          <li>Below the compass, the <em>down arrow</em> looks straight down at the spot in the middle of the view. The <em>Look around</em> button switches between the normal navigation and looking around, where dragging turns the camera in place, like holding <kbd>B</kbd>. Click it again or press <kbd>Esc</kbd> to go back.</li>
           <li>Click a marker to select its pair.</li>
           <li><em>Dim hidden points</em> draws points the mesh covers from your viewpoint at half strength.</li>
           <li>Once solved, the <span class="t-fixer">cyan pyramid</span> shows the camera position and what it saw. Its thick edge is the top of the photo.</li>
@@ -865,16 +958,18 @@ select.select {
           <li><b>Residual</b> is how far, in photo pixels, the solved camera misses that pair. A red value means the pair fits much worse than the rest; it may be matched to the wrong feature.</li>
           <li><b>Use</b> leaves a pair out of the solution without deleting it.</li>
           <li>Row buttons: place again in the photo, place again in the scene, show in both views, delete.</li>
-          <li><em>Copy CSV</em> copies the pairs. <em>Paste points</em> loads pairs you saved earlier, as CSV or JSON. <em>Clear</em> removes all.</li>
+          <li>Points are always numbered 1, 2, 3… in order. Deleting or discarding one renumbers the rest, and pasted points are renumbered the same way. Copy the pairs again after deleting, so a saved list matches the numbers on screen.</li>
+          <li><em>Copy CSV</em> copies the pairs. <em>Paste points</em> loads pairs you saved earlier, as CSV or JSON, replacing the current list. Its box always opens empty, and both views zoom to the loaded points. <em>Clear</em> removes all.</li>
           <li>Only the coordinates and the Use flag are read from pasted data. Residuals and camera values in it are ignored and always recalculated.</li>
         </ul>
       </section>
       <section class="help-sec">
         <h4>Camera</h4>
         <ul>
+          <li>The panel's bar holds <em>View from camera</em>, <em>Copy camera</em> (camera only, as JSON) and <em>Copy all</em> (pairs and camera, as JSON, which <em>Paste points</em> loads back).</li>
           <li><b>RMS error</b> is the typical miss in pixels. <b>σ₀</b> is the same corrected for the number of unknowns. <b>Redundancy</b> counts the extra measurements beyond the minimum.</li>
           <li><b>±</b> values are one standard deviation. They shrink as you add well-spread pairs.</li>
-          <li><em>Free image center</em> solves the optical center too, for cropped photos or shift lenses. Needs 10+ pairs.</li>
+          <li>Under <em>Also solve</em>: <em>Free image center</em> solves the optical center too, for cropped photos or shift lenses. Needs 10+ pairs.</li>
           <li><em>Lens distortion</em> corrects lines bent by the lens. Turn it on if errors grow toward the photo edges.</li>
           <li>Keep an option only if it clearly lowers the RMS error.</li>
         </ul>
@@ -883,9 +978,10 @@ select.select {
         <h4>View from camera</h4>
         <ul>
           <li>Moves the scene to the solved camera: same position, heading, tilt and field of view. Then it lays the photo over it.</li>
-          <li>If the solution is right, the buildings in the scene line up with the photo. Use the opacity slider to compare.</li>
-          <li>A photo is often taken from a window or a spot the mesh encloses. <em>Clip mesh</em> removes the mesh within the chosen radius around the camera so it does not block the view.</li>
-          <li>Navigation is locked while the photo is shown. <em>Exit</em> or <kbd>Esc</kbd> returns you to your previous view.</li>
+          <li>If the solution is right, the buildings in the scene line up with the photo. Click the words <em>Photo opacity</em> to jump between 0% and 100%; keep clicking to compare. The slider sets anything in between.</li>
+          <li>A photo is often taken from a window or a spot the mesh encloses. <em>Clip mesh</em> removes the mesh within the chosen radius around the camera so it does not block the view. Click the words <em>Clip mesh</em> to switch the clip off and back to the last radius.</li>
+          <li>Click a value to type it exactly, then press <kbd>Enter</kbd>. A typed clip radius can go beyond the slider's 100 m.</li>
+          <li>Navigation is locked while the photo is shown. <em>Exit</em> or <kbd>Esc</kbd> returns you to your previous view. <em>Explore from here</em> instead unlocks navigation at the camera position, with the scene's default field of view.</li>
         </ul>
       </section>
     </div>
@@ -914,21 +1010,23 @@ select.select {
       <section class="help-sec">
         <h4>Keyboard</h4>
         <dl class="keys">
-          <dt><kbd>Esc</kbd></dt><dd>Cancel re-placing, discard a half-placed point, leave camera view, close a dialog</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Cancel re-placing, discard a half-placed point, leave camera view and return to the previous view, stop looking around, close a dialog</dd>
           <dt><kbd>Delete</kbd></dt><dd>Delete the selected pair</dd>
           <dt><kbd>F</kbd></dt><dd>Fit the photo to its panel</dd>
           <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom the photo</dd>
           <dt><kbd>M</kbd></dt><dd>Magnifier on or off</dd>
           <dt><kbd>?</kbd></dt><dd>This help</dd>
+          <dt><kbd>Enter</kbd></dt><dd>Apply a typed value</dd>
         </dl>
       </section>
       <section class="help-sec">
         <h4>Coordinates and saving</h4>
         <ul>
           <li>Photo <b>u, v</b> are pixels from the top-left corner, v pointing down.</li>
+          <li>Coordinates are kept at full precision. The table shows 1 decimal for pixels and 2 for meters; copied data keeps 2 for pixels and 3 for meters (millimeters).</li>
           <li>Scene <b>X, Y</b> are EPSG:3857, <b>Z</b> is meters in the mesh's height system. The camera is solved in a local metric frame and converted back.</li>
           <li>Heading is clockwise from true north. Tilt follows ArcGIS: 0° looks straight down, 90° at the horizon. Pitch is tilt − 90°. Positive roll means the photo is rotated clockwise against a level camera.</li>
-          <li>Point pairs are not saved. Use <em>Copy everything</em> or <em>Copy CSV</em>, and <em>Paste points</em> to continue later.</li>
+          <li>Point pairs are not saved. Use <em>Copy all</em> or <em>Copy CSV</em>, and <em>Paste points</em> to continue later.</li>
           <li>The example loads from the <b>example</b> folder next to the app: <b>example.jpg</b> and <b>example.txt</b> (points as CSV or JSON).</li>
         </ul>
       </section>
@@ -940,7 +1038,7 @@ select.select {
 <div class="modal-back" id="importModal" hidden>
   <form class="modal" id="importForm" autocomplete="off">
     <h3>Paste points</h3>
-    <p>Paste the JSON from <em>Copy everything</em>, or CSV with the columns <span class="mono">id,u,v,x,y,z</span> (optional <span class="mono">enabled</span>). Pasted points replace the current list. Residuals and camera values in the pasted text are ignored and recalculated.</p>
+    <p>Paste the JSON from <em>Copy all</em>, or CSV with the columns <span class="mono">id,u,v,x,y,z</span> (optional <span class="mono">enabled</span>), comma, semicolon or tab separated. Pasted points replace the current list. Residuals and camera values in the pasted text are ignored and recalculated.</p>
     <div class="field">
       <label class="label" for="importText">Points</label>
       <textarea id="importText" spellcheck="false" placeholder="id,u,v,x,y,z&#10;1,1523.4,880.2,1605282.74,6461373.72,231.4"></textarea>
@@ -1414,63 +1512,216 @@ const Solver = (() => {
   return { solve, projectWorld, minPoints, mercToLonLat, lonLatToMerc, _test: { axes, projectP, enuFrame, geodToEcef, ecefToEnu, dlt } };
 })();
 </script>
-<script src="https://js.arcgis.com/4.33/"></script>
 <script>
+/* Standpoint: application logic
+ *
+ * Three parts share one `state` object and a few render functions:
+ *   photo pane   canvas with pan, zoom, point markers and a magnifier (no library)
+ *   scene pane   ArcGIS SceneView in Web Mercator, loaded on demand (initScene)
+ *   dock         point pair table and camera results
+ *
+ * Every edit to the points calls changed(): it re-renders the views and
+ * schedules a least-squares solve (Solver, from solver.js). The scene part
+ * plugs its functions into the `scene` object once ArcGIS has loaded; until
+ * then they do nothing, so the photo side works on its own.
+ */
 (() => {
 'use strict';
-const $ = (s) => document.querySelector(s);
-const R2D = 180 / Math.PI;
-const COLORS = { safelight: '#f2a541', fixer: '#7cc8da', bad: '#ef6b55', off: '#6d665c', ink: '#121110', text: '#ece6db' };
-// Nothing is remembered between visits. Remove anything earlier versions stored.
+
+// ======================================================================
+// constants and small helpers
+// ======================================================================
+const ARCGIS_JS = 'https://js.arcgis.com/4.33/';
+const ARCGIS_CSS = 'https://js.arcgis.com/4.33/esri/themes/dark/main.css';
+const SMALL_SCREEN = '(max-width: 767px), (max-height: 499px)'; // keep in sync with the CSS
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+const $ = (sel) => document.querySelector(sel);
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// canvas drawing uses the same colors as the CSS tokens
+const COLORS = {
+  safelight: cssVar('--safelight'), safelightInk: cssVar('--safelight-ink'), fixer: cssVar('--fixer'),
+  bad: cssVar('--bad'), off: cssVar('--faint'), text: cssVar('--text'), ink: cssVar('--bg'), sunken: cssVar('--sunken'),
+};
+const HALO = 'rgba(10,9,8,.85)'; // dark outline that keeps markers readable on any photo
+
+const fmt = (n, d = 2) => (n == null || !isFinite(n)) ? '–' : n.toFixed(d);
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Web Mercator stretches lengths by 1 / cos(latitude): meters = mercator units × mercScale
+const mercScale = (latDeg) => Math.cos(latDeg * D2R);
+
+// Nothing is remembered between visits; remove anything earlier versions stored.
 try { Object.keys(localStorage).filter(k => k.startsWith('standpoint.')).forEach(k => localStorage.removeItem(k)); } catch { /* storage unavailable */ }
 
 // ======================================================================
 // state
 // ======================================================================
 const state = {
-  img: null, imgURL: null, imgName: '', W: 0, H: 0,
-  pv: { scale: 1, tx: 0, ty: 0 },
-  points: [], nextId: 1,
-  selected: null,
-  repick: null,            // {id, side: 'photo' | 'scene'}
+  img: null, imgURL: '', imgName: '', W: 0, H: 0,
+  levels: [],              // the photo at full size plus halved copies, for fast drawing when zoomed out
+  pv: { scale: 1, tx: 0, ty: 0 }, // photo view: screen = t + image × scale
+  points: [],              // { id, seq, u, v, x, y, z, enabled }; ids are always 1..n
+  seq: 0,                  // creation counter; tells which half-placed point is the newest
+  selected: null,          // id of the selected pair
+  repick: null,            // { id, side: 'photo' | 'scene' } while a pair is being placed again
   opts: { freePP: false, k1: false },
   sol: null, solving: false,
-  cameraMode: false,
+  cameraMode: false,       // looking through the solved camera with the photo overlaid
   dimHidden: true,
   loupe: true,
-  hover: null,             // screen [x, y] over photo
+  hover: null,             // pointer position over the photo canvas, [x, y]
 };
 
+// Filled in by initScene() once ArcGIS has loaded.
+const scene = {
+  ready: false,
+  syncGraphics() {}, syncCamera() {}, goToPoint() {}, fitPoints() {},
+  applyCameraView() {}, releaseCameraView() {}, stopLook() { return false; },
+};
+
+// ======================================================================
+// point model
+// ======================================================================
 const isComplete = (p) => p.u != null && p.x != null;
 const activePoints = () => state.points.filter(p => isComplete(p) && p.enabled);
 const byId = (id) => state.points.find(p => p.id === id);
-
-function pendingFor(side) {
-  if (state.repick && state.repick.side === side) return byId(state.repick.id) || null;
-  for (let i = state.points.length - 1; i >= 0; i--) {
-    const p = state.points[i];
-    if (side === 'photo' ? (p.u == null && p.x != null) : (p.x == null && p.u != null)) return p;
-  }
-  return null;
-}
 const solved = () => !!(state.sol && state.sol.ok && state.sol.camera);
 
+// The newest half-placed point waits for its position on the other side.
+function pendingFor(side) {
+  if (state.repick && state.repick.side === side) return byId(state.repick.id) || null;
+  let best = null;
+  for (const p of state.points) {
+    const waits = side === 'photo' ? (p.u == null && p.x != null) : (p.x == null && p.u != null);
+    if (waits && (!best || p.seq > best.seq)) best = p;
+  }
+  return best;
+}
+// Points are always numbered 1..n in order, so a new point simply gets n + 1.
+function newPoint(fields) {
+  const p = { id: state.points.length + 1, seq: ++state.seq, u: null, v: null, x: null, y: null, z: null, enabled: true, ...fields };
+  state.points.push(p);
+  return p;
+}
+function removePoint(id) {
+  state.points = state.points.filter(p => p.id !== id);
+  if (state.selected === id) state.selected = null;
+  if (state.repick && state.repick.id === id) state.repick = null;
+  // close the gap: renumber, and move references and the last residuals along
+  const map = new Map();
+  state.points.forEach((p, i) => { map.set(p.id, i + 1); p.id = i + 1; });
+  if (state.selected != null) state.selected = map.get(state.selected) ?? null;
+  if (state.repick) state.repick = { ...state.repick, id: map.get(state.repick.id) };
+  if (state.sol && state.sol.residuals) {
+    state.sol.residuals = state.sol.residuals.filter(r => map.has(r.id));
+    state.sol.residuals.forEach(r => { r.id = map.get(r.id); });
+  }
+  changed();
+}
+// Replace all points. Their given numbers only set the order; they become 1..n.
+function setPoints(pts) {
+  state.points = pts.slice().sort((a, b) => a.id - b.id); // stable, so equal numbers keep their order
+  state.points.forEach((p, i) => { p.id = i + 1; p.seq = ++state.seq; });
+  state.selected = null; state.repick = null;
+  state.sol = null; // the old solution belongs to the old points
+}
+function setOptions(opts) {
+  state.opts = { freePP: !!opts.freePP, k1: !!opts.k1 };
+  $('#optPP').checked = state.opts.freePP;
+  $('#optK1').checked = state.opts.k1;
+}
+
 // ======================================================================
-// utilities
+// messages, tooltips, clipboard, dialogs
 // ======================================================================
-const fmt = (n, d = 2) => (n == null || !isFinite(n)) ? '–' : n.toFixed(d);
-let toastTimer;
 const WARN_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.8 15 14H1z" stroke-linejoin="round"/><path d="M8 6v3.6"/><circle cx="8" cy="11.7" r=".5" fill="currentColor" stroke="none"/></svg>';
+let toastTimer;
 function toast(msg, bad = false) {
   const t = $('#toast');
   t.innerHTML = (bad ? WARN_ICON : '') + `<span>${escapeHtml(msg)}</span>`;
-  t.title = bad ? 'Click to dismiss' : '';
+  t.dataset.tip = bad ? 'Click to dismiss' : '';
   t.classList.toggle('is-bad', bad);
   t.classList.add('is-on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('is-on'), bad ? 6500 : 2400);
 }
 $('#toast').addEventListener('click', () => $('#toast').classList.remove('is-on'));
+
+// Tooltips: one style for the whole app, shown at the cursor. Any element with
+// data-tip (optional data-tip-title and data-tip-key) gets one. Plain title
+// attributes, ArcGIS's included, are converted when first hovered. The color
+// follows the nearest [data-tone] ancestor: cyan in the Camera parts, amber elsewhere.
+const tipBox = document.createElement('div');
+tipBox.className = 'tip'; tipBox.setAttribute('role', 'tooltip'); tipBox.hidden = true;
+document.body.appendChild(tipBox);
+let tipEl = null, tipTimer = null, tipXY = [0, 0];
+function adoptTitle(el) {
+  if (!el.hasAttribute('title')) return;
+  const t = el.getAttribute('title').trim();
+  el.removeAttribute('title');
+  if (!t) { delete el.dataset.tip; return; }
+  el.dataset.tip = t;
+  if (!el.getAttribute('aria-label') && !el.textContent.trim()) el.setAttribute('aria-label', t);
+}
+function placeTip(anchor) {
+  const w = tipBox.offsetWidth, h = tipBox.offsetHeight;
+  let x = anchor ? anchor.left : tipXY[0] + 14;
+  let y = anchor ? anchor.bottom + 8 : tipXY[1] + 20;
+  if (x + w > innerWidth - 8) x = Math.max(8, (anchor ? anchor.right : tipXY[0] - 10) - w);
+  if (y + h > innerHeight - 8) y = Math.max(8, (anchor ? anchor.top - 8 : tipXY[1] - 12) - h);
+  tipBox.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+function showTip(anchor) {
+  if (!tipEl || !tipEl.isConnected || !tipEl.dataset.tip) return;
+  tipBox.textContent = '';
+  if (tipEl.dataset.tipTitle) { const b = document.createElement('b'); b.textContent = tipEl.dataset.tipTitle; tipBox.appendChild(b); }
+  tipBox.appendChild(document.createTextNode(tipEl.dataset.tip));
+  if (tipEl.dataset.tipKey) { const k = document.createElement('kbd'); k.textContent = tipEl.dataset.tipKey; tipBox.appendChild(k); }
+  const toneEl = tipEl.closest('[data-tone]');
+  tipBox.dataset.tone = toneEl ? toneEl.dataset.tone : 'safe';
+  tipBox.hidden = false;
+  placeTip(anchor);
+  tipBox.classList.add('is-on');
+}
+function hideTip() {
+  clearTimeout(tipTimer); tipEl = null;
+  tipBox.classList.remove('is-on'); tipBox.hidden = true;
+}
+const tipTarget = (node) => (node && node.closest ? node.closest('[data-tip], [title]') : null);
+document.addEventListener('pointerover', (e) => {
+  if (e.pointerType === 'touch') return;
+  const el = tipTarget(e.target);
+  if (el === tipEl) return;
+  hideTip();
+  if (!el) return;
+  adoptTitle(el);
+  if (!el.dataset.tip) return;
+  tipEl = el;
+  tipTimer = setTimeout(() => showTip(), 300);
+});
+document.addEventListener('pointermove', (e) => {
+  tipXY = [e.clientX, e.clientY];
+  if (!tipBox.hidden) placeTip();
+}, { passive: true });
+document.addEventListener('pointerout', (e) => { if (tipEl && !tipEl.contains(e.relatedTarget)) hideTip(); });
+['pointerdown', 'wheel', 'keydown', 'scroll'].forEach(t => document.addEventListener(t, hideTip, { capture: true, passive: true }));
+// keyboard users get the tooltip under the focused control
+document.addEventListener('focusin', (e) => {
+  const el = tipTarget(e.target);
+  if (el && el.dataset.quietFocus) { delete el.dataset.quietFocus; return; }
+  if (!el || !el.matches(':focus-visible')) return;
+  adoptTitle(el);
+  if (!el.dataset.tip) return;
+  hideTip(); tipEl = el;
+  tipTimer = setTimeout(() => showTip(el.getBoundingClientRect()), 300);
+});
+document.addEventListener('focusout', hideTip);
+
+// Clipboard: the async API needs a secure context; older views fall back to execCommand.
 async function copyText(text, msg) {
   try {
     await navigator.clipboard.writeText(text);
@@ -1485,11 +1736,19 @@ async function copyText(text, msg) {
     toast(ok ? msg : 'Copy was blocked by the browser', !ok);
   }
 }
-function openModal(id) { $(id).hidden = false; const f = $(id).querySelector('input, textarea, button.btn-primary'); if (f) setTimeout(() => f.focus(), 30); }
-function closeModal(id) { $(id).hidden = true; }
+
+const openModals = () => [...document.querySelectorAll('.modal-back')].filter(m => !m.hidden);
+function openModal(sel) {
+  const m = $(sel);
+  m.hidden = false;
+  const f = m.querySelector('input, textarea, button.btn-primary');
+  if (f) setTimeout(() => f.focus(), 30);
+}
+const closeModal = (sel) => { $(sel).hidden = true; };
 document.querySelectorAll('.modal-back').forEach(m => {
   m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) m.hidden = true; });
 });
+// A small yes/no dialog; actions: [{ label, cls?, run? }]
 function confirmBox(title, text, actions) {
   $('#confirmTitle').textContent = title;
   $('#confirmText').textContent = text;
@@ -1497,7 +1756,7 @@ function confirmBox(title, text, actions) {
   actions.forEach(a => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn ' + (a.cls || ''); b.textContent = a.label;
-    b.onclick = () => { closeModal('#confirmModal'); a.run && a.run(); };
+    b.onclick = () => { closeModal('#confirmModal'); if (a.run) a.run(); };
     box.appendChild(b);
   });
   openModal('#confirmModal');
@@ -1506,45 +1765,68 @@ function confirmBox(title, text, actions) {
 // ======================================================================
 // photo loading
 // ======================================================================
-function openImage(blob, name, keep) {
+// Copies of the photo at 1/2, 1/4, … size. Drawing a large scan scaled far
+// down on every frame is slow, so the view draws the smallest copy that is
+// still at least as sharp as the screen. Browsers apply EXIF orientation to
+// both the image and these copies, so u, v always refer to the upright photo.
+function buildLevels(img) {
+  const levels = [img];
+  try {
+    let src = img, w = img.naturalWidth, h = img.naturalHeight;
+    while (Math.max(w, h) > 1600) {
+      w = Math.max(1, Math.round(w / 2)); h = Math.max(1, Math.round(h / 2));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(src, 0, 0, w, h);
+      levels.push(c); src = c;
+    }
+  } catch (err) { console.warn('Could not make smaller copies of the photo', err); }
+  return levels;
+}
+function openImage(blob, name, keepPoints) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
       if (state.imgURL) URL.revokeObjectURL(state.imgURL);
-      state.img = img; state.imgURL = url; state.imgName = name;
-      state.W = img.naturalWidth; state.H = img.naturalHeight;
-      if (!keep) { state.points = []; state.nextId = 1; state.selected = null; state.repick = null; }
+      Object.assign(state, { img, imgURL: url, imgName: name, W: img.naturalWidth, H: img.naturalHeight, levels: buildLevels(img) });
+      if (!keepPoints) setPoints([]);
       $('#overlayImg').src = url;
       $('#dropzone').hidden = true;
-      $('#photoMeta').textContent = `${state.imgName} · ${state.W} × ${state.H} px`;
-      $('#photoMeta').title = $('#photoMeta').textContent;
+      const meta = $('#photoMeta');
+      meta.textContent = `${name} · ${state.W} × ${state.H} px`;
+      meta.dataset.tip = meta.textContent;
       exitCameraMode();
       resizeCanvas(); fitPhoto();
       changed();
       resolve();
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('This image could not be opened')); };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('This browser cannot open that image. Use JPEG, PNG or WebP.'));
+    };
     img.src = url;
   });
 }
 function loadPhotoFile(file) {
-  if (!file || !file.type.startsWith('image/')) { toast('That file is not an image', true); return; }
+  // some systems report no type for HEIC and similar files, so only a known non-image is refused
+  if (!file || (file.type && !file.type.startsWith('image/'))) { toast('That file is not an image', true); return; }
   const go = (keep) => openImage(file, file.name || 'pasted image', keep).catch(err => toast(err.message, true));
-  if (state.points.length) {
-    confirmBox('Replace the photo?', `You have ${state.points.length} point pair${state.points.length > 1 ? 's' : ''}. Their photo positions belong to the current image.`, [
-      { label: 'Cancel' },
-      { label: 'Keep points', run: () => go(true) },
-      { label: 'Start fresh', cls: 'btn-primary', run: () => go(false) },
-    ]);
-  } else go(false);
+  if (!state.points.length) { go(false); return; }
+  confirmBox('Replace the photo?', `You have ${plural(state.points.length, 'point pair')}. Their photo positions belong to the current image.`, [
+    { label: 'Cancel' },
+    { label: 'Keep points', run: () => go(true) },
+    { label: 'Start fresh', cls: 'btn-primary', run: () => go(false) },
+  ]);
 }
-// example/example.jpg + example/example.txt next to the app
+// The example lives next to the app: example/example.jpg and example/example.txt.
 async function loadExample() {
   closeModal('#helpModal');
   let blob, text;
   try {
-    const [ir, tr] = await Promise.all([fetch('example/example.jpg'), fetch('example/example.txt')]);
+    const [ir, tr] = await Promise.all([fetch('example/example.jpg', { cache: 'no-cache' }), fetch('example/example.txt', { cache: 'no-cache' })]);
     if (!ir.ok || !tr.ok) throw new Error('missing');
     [blob, text] = await Promise.all([ir.blob(), tr.text()]);
   } catch {
@@ -1553,18 +1835,16 @@ async function loadExample() {
       : 'The example was not found. Put example.jpg and example.txt in an "example" folder next to the app.', true);
     return;
   }
-  let pts;
-  try { pts = parseImport(text); } catch (err) { toast(`example.txt: ${err.message}`, true); return; }
+  let parsed;
+  try { parsed = parseImport(text); } catch (err) { toast(`example.txt: ${err.message}`, true); return; }
   try { await openImage(blob, 'example.jpg', false); } catch (err) { toast(`example.jpg: ${err.message}`, true); return; }
-  state.points = pts; state.nextId = Math.max(0, ...pts.map(p => p.id)) + 1;
-  changed();
-  scene.goToPoints(pts);
-  toast(`Example loaded with ${pts.length} point pairs`);
+  loadPoints(parsed);
+  toast(`Example loaded with ${plural(parsed.points.length, 'point pair')}`);
 }
 $('#btnExample').onclick = () => {
   if (!state.points.length) { loadExample(); return; }
   closeModal('#helpModal');
-  confirmBox('Load the example?', `It replaces the current photo and your ${state.points.length} point pair${state.points.length > 1 ? 's' : ''}. Copy them first if you want to keep them.`, [
+  confirmBox('Load the example?', `It replaces the current photo and your ${plural(state.points.length, 'point pair')}. Copy them first if you want to keep them.`, [
     { label: 'Cancel' },
     { label: 'Load example', cls: 'btn-primary', run: loadExample },
   ]);
@@ -1577,20 +1857,38 @@ const photoBody = $('#photoBody');
 ['dragleave', 'drop'].forEach(t => photoBody.addEventListener(t, (e) => { e.preventDefault(); $('#dropzone').classList.remove('is-over'); }));
 photoBody.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) loadPhotoFile(f); });
 document.addEventListener('paste', (e) => {
-  if (e.target.closest('input, textarea')) return;
-  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
-  if (item) { e.preventDefault(); loadPhotoFile(item.getAsFile()); }
+  if (e.target.closest && e.target.closest('input, textarea')) return;
+  const cd = e.clipboardData; if (!cd) return;
+  const item = [...(cd.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
+  const file = (item && item.getAsFile()) || [...(cd.files || [])].find(f => f.type.startsWith('image/'));
+  if (file) { e.preventDefault(); loadPhotoFile(file); }
 });
 
 // ======================================================================
-// photo canvas: pan, zoom, markers, loupe
+// photo canvas: pan, zoom, markers, magnifier
 // ======================================================================
 const canvas = $('#photoCanvas');
 const ctx = canvas.getContext('2d');
 const loupe = $('#loupe');
 const lctx = loupe.getContext('2d');
 const LOUPE = 240; // magnifier size in CSS pixels
-let cw = 0, ch = 0;
+let cw = 0, ch = 0; // canvas size in CSS pixels
+// pointer gestures (see "pointer input" below)
+let drag = null;     // single-pointer gesture: click, marker drag or pan
+let pinch = null;    // two-finger gesture: { dist, mid }
+let pinched = false; // a pinch happened; its lifting fingers must not click
+const pointers = new Map(); // active pointerId → [x, y]
+
+// Drawing is batched to one frame. A hover only redraws the magnifier.
+let photoFrame = 0, photoFull = false;
+function requestPhoto(full = true) {
+  photoFull = photoFull || full;
+  if (photoFrame) return;
+  photoFrame = requestAnimationFrame(() => {
+    photoFrame = 0;
+    if (photoFull) { photoFull = false; drawPhoto(); } else drawLoupe();
+  });
+}
 
 function resizeCanvas() {
   const r = photoBody.getBoundingClientRect();
@@ -1598,96 +1896,108 @@ function resizeCanvas() {
   const oldW = cw, oldH = ch;
   cw = r.width; ch = r.height;
   canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
-  // keep the same image point in the center
-  if (oldW && state.img) { state.pv.tx += (cw - oldW) / 2; state.pv.ty += (ch - oldH) / 2; }
   const ld = Math.round(LOUPE * dpr);
   if (loupe.width !== ld) { loupe.width = ld; loupe.height = ld; }
+  if (state.img && cw && ch) {
+    if (!oldW || !oldH) fitPhoto(); // the pane was hidden before
+    else { state.pv.tx += (cw - oldW) / 2; state.pv.ty += (ch - oldH) / 2; } // keep the same spot in the middle
+  }
   drawPhoto();
 }
 new ResizeObserver(resizeCanvas).observe(photoBody);
+// moving the window to a screen with another pixel density changes the canvas resolution
+(function watchPixelRatio() {
+  const mq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  const onChange = () => { mq.removeEventListener('change', onChange); resizeCanvas(); scene.syncGraphics(); watchPixelRatio(); };
+  mq.addEventListener('change', onChange);
+})();
 
 function fitPhoto() {
-  if (!state.img) return;
+  if (!state.img || !cw || !ch) return;
   const s = Math.min(cw / state.W, ch / state.H) * 0.94;
   state.pv = { scale: s, tx: (cw - state.W * s) / 2, ty: (ch - state.H * s) / 2 };
-  drawPhoto();
+  requestPhoto();
 }
 const toScreen = (u, v) => [state.pv.tx + u * state.pv.scale, state.pv.ty + v * state.pv.scale];
 const toImage = (x, y) => [(x - state.pv.tx) / state.pv.scale, (y - state.pv.ty) / state.pv.scale];
 const insideImage = (u, v) => u >= 0 && v >= 0 && u <= state.W && v <= state.H;
 
 function zoomAt(factor, sx = cw / 2, sy = ch / 2) {
-  if (!state.img) return;
+  if (!state.img || !cw || !ch) return;
   const fit = Math.min(cw / state.W, ch / state.H);
-  const s = Math.min(Math.max(state.pv.scale * factor, fit * 0.3), 48);
+  const s = clamp(state.pv.scale * factor, fit * 0.3, 48);
   const [u, v] = toImage(sx, sy);
   state.pv.scale = s;
   state.pv.tx = sx - u * s; state.pv.ty = sy - v * s;
-  drawPhoto();
+  requestPhoto();
 }
 $('#zoomIn').onclick = () => zoomAt(1.5);
 $('#zoomOut').onclick = () => zoomAt(1 / 1.5);
 $('#zoomFit').onclick = fitPhoto;
 
+function residualMap() {
+  const m = new Map();
+  if (state.sol && state.sol.residuals) state.sol.residuals.forEach(r => m.set(r.id, r));
+  return m;
+}
 function pointColor(p, res) {
   if (!p.enabled) return COLORS.off;
   if (res && res.suspect) return COLORS.bad;
   return COLORS.safelight;
 }
 
-function drawMarker(g, x, y, p, color, { selected, pending, occluded = false, scale = 1 }) {
-  const r = 8 * scale;
+// One marker: ring with crosshair ticks, center left clear so the feature stays
+// visible, and a number tag. Used on the photo, in the magnifier and over the scene.
+function drawMarker(g, x, y, p, color, { selected = false, pending = false, occluded = false, scale = 1 } = {}) {
+  const r = 8 * scale, t0 = r + 2 * scale, t1 = r + 6 * scale;
+  const ring = () => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke(); };
+  const ticks = () => {
+    g.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { g.moveTo(x + dx * t0, y + dy * t0); g.lineTo(x + dx * t1, y + dy * t1); }
+    g.stroke();
+  };
   g.save();
   if (occluded) g.globalAlpha = 0.5;
   g.lineCap = 'round';
-  // dark halo for legibility on any print
-  g.strokeStyle = 'rgba(10,9,8,.85)'; g.lineWidth = 4 * scale;
-  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = HALO; g.lineWidth = 4 * scale; ring();
   g.strokeStyle = color; g.lineWidth = 1.7 * scale;
   if (pending) g.setLineDash([3 * scale, 2.5 * scale]);
-  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+  ring();
   g.setLineDash([]);
-  // crosshair ticks outside the ring, center left clear so the feature stays visible
-  const t0 = r + 2 * scale, t1 = r + 6 * scale;
-  g.strokeStyle = 'rgba(10,9,8,.85)'; g.lineWidth = 3.4 * scale;
-  g.beginPath();
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { g.moveTo(x + dx * t0, y + dy * t0); g.lineTo(x + dx * t1, y + dy * t1); }
-  g.stroke();
-  g.strokeStyle = color; g.lineWidth = 1.5 * scale;
-  g.beginPath();
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { g.moveTo(x + dx * t0, y + dy * t0); g.lineTo(x + dx * t1, y + dy * t1); }
-  g.stroke();
+  g.strokeStyle = HALO; g.lineWidth = 3.4 * scale; ticks();
+  g.strokeStyle = color; g.lineWidth = 1.5 * scale; ticks();
   g.fillStyle = color;
   g.beginPath(); g.arc(x, y, 1.1 * scale, 0, Math.PI * 2); g.fill();
   if (selected) {
     g.strokeStyle = COLORS.text; g.lineWidth = 1.2 * scale;
     g.beginPath(); g.arc(x, y, r + 9 * scale, 0, Math.PI * 2); g.stroke();
   }
-  // id label
   if (p) {
     const label = String(p.id);
     g.font = `600 ${10.5 * scale}px "JetBrains Mono", monospace`;
     const w = g.measureText(label).width + 8 * scale, h = 15 * scale;
-    const lx = x + r + 5 * scale, ly = y - r - h + 1 * scale;
-    g.fillStyle = pending ? 'rgba(10,9,8,.85)' : color;
-    g.beginPath(); g.roundRect ? g.roundRect(lx, ly, w, h, 3 * scale) : g.rect(lx, ly, w, h); g.fill();
+    const lx = x + r + 5 * scale, ly = y - r - h + scale;
+    g.fillStyle = pending ? HALO : color;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(lx, ly, w, h, 3 * scale); else g.rect(lx, ly, w, h);
+    g.fill();
     if (pending) { g.strokeStyle = color; g.lineWidth = 1; g.stroke(); }
-    g.fillStyle = pending ? color : '#1d1305';
+    g.fillStyle = pending ? color : COLORS.safelightInk;
     g.textBaseline = 'middle';
     g.fillText(label, lx + 4 * scale, ly + h / 2 + 0.5);
   }
   g.restore();
 }
-
-function drawGhost(g, x, y, label, scale = 1) {
+// Where a point placed only in the scene should appear in the photo.
+function drawGhost(g, x, y, label) {
   g.save();
-  g.strokeStyle = COLORS.fixer; g.lineWidth = 1.5 * scale;
-  g.setLineDash([4 * scale, 3 * scale]);
-  g.beginPath(); g.arc(x, y, 14 * scale, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = COLORS.fixer; g.lineWidth = 1.5;
+  g.setLineDash([4, 3]);
+  g.beginPath(); g.arc(x, y, 14, 0, Math.PI * 2); g.stroke();
   g.setLineDash([]);
-  g.font = `600 ${10.5 * scale}px "JetBrains Mono", monospace`;
+  g.font = '600 10.5px "JetBrains Mono", monospace';
   const tw = g.measureText(label).width;
-  const lx = x + 18 * scale + tw > cw - 6 ? x - 18 * scale - tw : x + 18 * scale;
+  const lx = x + 18 + tw > cw - 6 ? x - 18 - tw : x + 18;
   g.fillStyle = 'rgba(10,9,8,.8)';
   g.fillRect(lx - 3, y - 8, tw + 6, 16);
   g.fillStyle = COLORS.fixer; g.textBaseline = 'middle';
@@ -1695,44 +2005,43 @@ function drawGhost(g, x, y, label, scale = 1) {
   g.restore();
 }
 
-function residualMap() {
-  const m = new Map();
-  if (state.sol && state.sol.residuals) state.sol.residuals.forEach(r => m.set(r.id, r));
-  return m;
+// the smallest copy of the photo that is still sharp at this zoom
+function levelFor(displayWidth) {
+  const L = state.levels;
+  for (let i = L.length - 1; i > 0; i--) if (L[i].width >= displayWidth) return L[i];
+  return L[0];
 }
 
 function drawPhoto() {
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cw, ch);
-  updateZoomReadout();
+  $('#zoomReadout').textContent = state.img ? Math.round(state.pv.scale * 100) + '%' : '–';
   if (!state.img) { loupe.hidden = true; return; }
   const { scale, tx, ty } = state.pv;
-  ctx.imageSmoothingEnabled = scale < 3;
+  ctx.imageSmoothingEnabled = scale < 3; // show real pixels when zoomed far in
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(state.img, tx, ty, state.W * scale, state.H * scale);
-  // frame
+  ctx.drawImage(levelFor(state.W * scale * dpr), tx, ty, state.W * scale, state.H * scale);
   ctx.strokeStyle = 'rgba(236,230,219,.18)'; ctx.lineWidth = 1;
   ctx.strokeRect(tx - 0.5, ty - 0.5, state.W * scale + 1, state.H * scale + 1);
 
   const res = residualMap();
-  const sol = solved() ? state.sol : null;
-
-  // residual vectors: measured → where the solved camera puts the 3D point
-  if (sol) {
+  if (solved()) {
+    // residual lines: from each marker to where the solved camera puts its 3D point
     ctx.save();
     ctx.strokeStyle = COLORS.fixer; ctx.lineWidth = 1.4;
+    ctx.beginPath();
     for (const p of state.points) {
       const r = res.get(p.id); if (!r || !p.enabled) continue;
       const [ax, ay] = toScreen(p.u, p.v), [bx, by] = toScreen(r.pu, r.pv);
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(bx - 4, by); ctx.lineTo(bx + 4, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.stroke();
+      ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+      ctx.moveTo(bx - 4, by); ctx.lineTo(bx + 4, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4);
     }
+    ctx.stroke();
     ctx.restore();
-    // where scene-only points should appear
     for (const p of state.points) {
       if (p.u != null || p.x == null) continue;
-      const q = Solver.projectWorld(sol, p.x, p.y, p.z);
+      const q = Solver.projectWorld(state.sol, p.x, p.y, p.z);
       if (q && insideImage(q[0], q[1])) { const [x, y] = toScreen(q[0], q[1]); drawGhost(ctx, x, y, 'expected ' + p.id); }
     }
   }
@@ -1747,19 +2056,18 @@ function drawPhoto() {
 
 function drawLoupe() {
   const h = state.hover;
-  if (!state.loupe || !state.img || !h || drag && drag.moved && !drag.marker) { loupe.hidden = true; return; }
+  if (!state.loupe || !state.img || !h || (drag && drag.moved && !drag.marker) || pinch) { loupe.hidden = true; return; }
   const [u, v] = toImage(h[0], h[1]);
   if (!insideImage(u, v)) { loupe.hidden = true; return; }
   loupe.hidden = false;
-  loupe.classList.toggle('is-right', h[0] < LOUPE + 40 && h[1] < LOUPE + 40);
-  const dpr = window.devicePixelRatio || 1;
-  const L = LOUPE;
-  const mag = Math.min(Math.max(state.pv.scale * 4, 2), 24);
+  loupe.classList.toggle('is-right', h[0] < LOUPE + 40 && h[1] < LOUPE + 40); // move away from the cursor
+  const dpr = window.devicePixelRatio || 1, L = LOUPE, c = L / 2;
+  const mag = clamp(state.pv.scale * 4, 2, 24);
   lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  lctx.fillStyle = '#0d0c0b'; lctx.fillRect(0, 0, L, L);
+  lctx.fillStyle = COLORS.sunken; lctx.fillRect(0, 0, L, L);
   lctx.imageSmoothingEnabled = mag < 4;
-  const half = L / 2 / mag;
-  // draw only the part of the source that exists, positioned exactly
+  // copy only the part of the full-size photo that exists, positioned exactly
+  const half = c / mag;
   const sx0 = Math.max(0, u - half), sy0 = Math.max(0, v - half);
   const sx1 = Math.min(state.W, u + half), sy1 = Math.min(state.H, v + half);
   if (sx1 > sx0 && sy1 > sy0) {
@@ -1769,30 +2077,28 @@ function drawLoupe() {
   const res = residualMap();
   for (const p of state.points) {
     if (p.u == null) continue;
-    const x = (p.u - u) * mag + L / 2, y = (p.v - v) * mag + L / 2;
+    const x = (p.u - u) * mag + c, y = (p.v - v) * mag + c;
     if (x < -20 || y < -20 || x > L + 20 || y > L + 20) continue;
-    drawMarker(lctx, x, y, null, pointColor(p, res.get(p.id)), { selected: false, pending: !isComplete(p), scale: 0.8 });
+    drawMarker(lctx, x, y, null, pointColor(p, res.get(p.id)), { pending: !isComplete(p), scale: 0.8 });
   }
-  // crosshair
-  lctx.strokeStyle = 'rgba(10,9,8,.8)'; lctx.lineWidth = 3;
-  lctx.beginPath(); lctx.moveTo(L / 2, 18); lctx.lineTo(L / 2, L / 2 - 6); lctx.moveTo(L / 2, L / 2 + 6); lctx.lineTo(L / 2, L - 30);
-  lctx.moveTo(18, L / 2); lctx.lineTo(L / 2 - 6, L / 2); lctx.moveTo(L / 2 + 6, L / 2); lctx.lineTo(L - 18, L / 2); lctx.stroke();
-  lctx.strokeStyle = COLORS.safelight; lctx.lineWidth = 1;
-  lctx.stroke();
-  // coordinates
+  // crosshair with a gap in the middle
+  lctx.beginPath();
+  lctx.moveTo(c, 18); lctx.lineTo(c, c - 6); lctx.moveTo(c, c + 6); lctx.lineTo(c, L - 30);
+  lctx.moveTo(18, c); lctx.lineTo(c - 6, c); lctx.moveTo(c + 6, c); lctx.lineTo(L - 18, c);
+  lctx.strokeStyle = 'rgba(10,9,8,.8)'; lctx.lineWidth = 3; lctx.stroke();
+  lctx.strokeStyle = COLORS.safelight; lctx.lineWidth = 1; lctx.stroke();
   lctx.fillStyle = 'rgba(13,12,11,.82)'; lctx.fillRect(0, L - 22, L, 22);
   lctx.fillStyle = COLORS.text; lctx.font = '500 10.5px "JetBrains Mono", monospace'; lctx.textBaseline = 'middle';
   lctx.fillText(`u ${u.toFixed(1)}  v ${v.toFixed(1)}`, 8, L - 11);
 }
 
-function updateZoomReadout() {
-  $('#zoomReadout').textContent = state.img ? Math.round(state.pv.scale * 100) + '%' : '–';
-}
-
-let drag = null;
+// ---- pointer input: click to place, drag a marker to move it, drag the photo
+// to pan (left or middle button), wheel or trackpad pinch to zoom, and on
+// touch screens two fingers to pinch-zoom.
 const localXY = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-function markerAt(sx, sy) {
-  let best = null, bd = 13;
+const twoPointers = () => { const [a, b] = [...pointers.values()]; return { dist: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] }; };
+function markerAt(sx, sy, radius = 13) {
+  let best = null, bd = radius;
   for (const p of state.points) {
     if (p.u == null) continue;
     const [x, y] = toScreen(p.u, p.v);
@@ -1804,57 +2110,81 @@ function markerAt(sx, sy) {
 canvas.addEventListener('pointerdown', (e) => {
   if (!state.img || e.button === 2) return;
   canvas.setPointerCapture(e.pointerId);
-  const [sx, sy] = localXY(e);
-  const marker = e.button === 0 ? markerAt(sx, sy) : null;
-  drag = { sx, sy, lx: sx, ly: sy, moved: false, marker, pan: e.button === 1 };
+  const xy = localXY(e);
+  pointers.set(e.pointerId, xy);
+  if (pointers.size === 2) { drag = null; pinch = twoPointers(); pinched = true; canvas.classList.remove('is-panning'); return; }
+  if (pointers.size > 2) return;
+  pinched = false;
+  if (e.pointerType === 'touch') state.hover = xy; // fingers have no hover; show the magnifier while touching
+  const marker = e.button === 0 ? markerAt(xy[0], xy[1], e.pointerType === 'touch' ? 22 : 13) : null;
+  drag = { sx: xy[0], sy: xy[1], lx: xy[0], ly: xy[1], moved: false, marker, pan: e.button === 1 };
 });
 canvas.addEventListener('pointermove', (e) => {
-  const [sx, sy] = localXY(e);
-  state.hover = [sx, sy];
-  if (drag) {
-    if (!drag.moved && Math.hypot(sx - drag.sx, sy - drag.sy) > 4) {
-      drag.moved = true;
-      if (!drag.marker) canvas.classList.add('is-panning');
-    }
-    if (drag.moved) {
-      if (drag.marker && !drag.pan) {
-        const [u, v] = toImage(sx, sy);
-        drag.marker.u = Math.min(Math.max(u, 0), state.W);
-        drag.marker.v = Math.min(Math.max(v, 0), state.H);
-        state.selected = drag.marker.id;
-      } else {
-        state.pv.tx += sx - drag.lx; state.pv.ty += sy - drag.ly;
-      }
-    }
-    drag.lx = sx; drag.ly = sy;
-  } else {
-    canvas.classList.toggle('is-over-marker', !!markerAt(sx, sy) && !pendingFor('photo'));
+  const xy = localXY(e);
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, xy);
+  if (pinch) {
+    if (pointers.size < 2) return;
+    const now = twoPointers();
+    zoomAt(now.dist / pinch.dist, now.mid[0], now.mid[1]);
+    state.pv.tx += now.mid[0] - pinch.mid[0]; state.pv.ty += now.mid[1] - pinch.mid[1];
+    pinch = now;
+    return;
   }
-  drawPhoto();
+  if (e.pointerType !== 'touch' || drag) state.hover = xy;
+  if (!drag) {
+    canvas.classList.toggle('is-over-marker', !!markerAt(xy[0], xy[1]) && !pendingFor('photo'));
+    requestPhoto(false);
+    return;
+  }
+  if (!drag.moved && Math.hypot(xy[0] - drag.sx, xy[1] - drag.sy) > (e.pointerType === 'touch' ? 8 : 4)) {
+    drag.moved = true;
+    if (!drag.marker) canvas.classList.add('is-panning');
+  }
+  if (drag.moved) {
+    if (drag.marker && !drag.pan) {
+      const [u, v] = toImage(xy[0], xy[1]);
+      drag.marker.u = clamp(u, 0, state.W);
+      drag.marker.v = clamp(v, 0, state.H);
+      state.selected = drag.marker.id;
+    } else {
+      state.pv.tx += xy[0] - drag.lx; state.pv.ty += xy[1] - drag.ly;
+    }
+  }
+  drag.lx = xy[0]; drag.ly = xy[1];
+  requestPhoto();
 });
-canvas.addEventListener('pointerup', (e) => {
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (e.pointerType === 'touch' && !pointers.size) state.hover = null;
+  if (pinch || pinched) { // finish the pinch; no click from its fingers
+    if (pointers.size < 2) pinch = null;
+    if (!pointers.size) pinched = false;
+    requestPhoto();
+    return;
+  }
   if (!drag) return;
   const d = drag; drag = null;
   canvas.classList.remove('is-panning');
-  if (d.moved) {
-    if (d.marker && !d.pan) changed(); else drawPhoto();
-    return;
-  }
+  if (e.type === 'pointercancel') { if (d.moved && d.marker) changed(); else requestPhoto(); return; }
+  if (d.moved) { if (d.marker && !d.pan) changed(); else requestPhoto(); return; }
   if (d.pan) return;
-  const expecting = pendingFor('photo');
-  if (d.marker && !expecting) { select(d.marker.id); return; }
+  if (d.marker && !pendingFor('photo')) { select(d.marker.id); return; }
   const [u, v] = toImage(d.sx, d.sy);
-  if (!insideImage(u, v)) return;
-  placePhoto(u, v);
-});
-canvas.addEventListener('pointerleave', () => { if (!drag) { state.hover = null; drawPhoto(); } });
+  if (insideImage(u, v)) placePhoto(u, v);
+  else requestPhoto();
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', (e) => { if (!drag && e.pointerType !== 'touch') { state.hover = null; requestPhoto(false); } });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }); // no auto-scroll on middle-drag (Windows)
 canvas.addEventListener('wheel', (e) => {
   if (!state.img) return;
   e.preventDefault();
-  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1; // lines and pages (Firefox) to pixels
+  const speed = e.ctrlKey ? 0.01 : 0.0016; // a trackpad pinch arrives as ctrl + small wheel steps
   const [sx, sy] = localXY(e);
-  zoomAt(Math.exp(-e.deltaY * unit * 0.0016), sx, sy);
+  zoomAt(Math.exp(-e.deltaY * unit * speed), sx, sy);
 }, { passive: false });
 
 // ======================================================================
@@ -1862,54 +2192,55 @@ canvas.addEventListener('wheel', (e) => {
 // ======================================================================
 function placePhoto(u, v) {
   let p = pendingFor('photo');
-  if (p) { p.u = u; p.v = v; }
-  else { p = { id: state.nextId++, u, v, x: null, y: null, z: null, enabled: true }; state.points.push(p); }
+  if (p) { p.u = u; p.v = v; } else p = newPoint({ u, v });
   state.repick = null; state.selected = p.id;
   changed();
 }
 function placeScene(x, y, z) {
   let p = pendingFor('scene');
-  if (p) { p.x = x; p.y = y; p.z = z; }
-  else { p = { id: state.nextId++, u: null, v: null, x, y, z, enabled: true }; state.points.push(p); }
+  if (p) { p.x = x; p.y = y; p.z = z; } else p = newPoint({ x, y, z });
   state.repick = null; state.selected = p.id;
   changed();
 }
 function select(id) {
   state.selected = id;
-  renderTable(); drawPhoto(); scene.syncGraphics();
+  renderTable(); requestPhoto(); scene.syncGraphics();
   const row = document.querySelector(`tr[data-id="${id}"]`);
   if (row) row.scrollIntoView({ block: 'nearest' });
-}
-function removePoint(id) {
-  state.points = state.points.filter(p => p.id !== id);
-  if (state.selected === id) state.selected = null;
-  if (state.repick && state.repick.id === id) state.repick = null;
-  if (!state.points.length) state.nextId = 1;
-  changed();
 }
 function startRepick(id, side) {
   state.repick = { id, side };
   state.selected = id;
   renderAll();
 }
+// show a pair in both views
 function locate(id) {
   const p = byId(id); if (!p) return;
-  if (p.u != null && state.img) {
+  select(id);
+  if (p.u != null && state.img && cw) {
     const s = Math.max(state.pv.scale, Math.min(cw / state.W, ch / state.H) * 2.5);
-    state.pv.scale = s; state.pv.tx = cw / 2 - p.u * s; state.pv.ty = ch / 2 - p.v * s;
-    drawPhoto();
+    state.pv = { scale: s, tx: cw / 2 - p.u * s, ty: ch / 2 - p.v * s };
+    requestPhoto();
   }
   if (p.x != null) scene.goToPoint(p);
+}
+// replace the points with pasted or example data and show them in both views
+function loadPoints({ points, options }) {
+  if (options) setOptions(options);
+  setPoints(points);
+  changed();
+  fitPhoto();
+  scene.fitPoints(true);
 }
 
 // ======================================================================
 // solving
 // ======================================================================
+// Edits often come in bursts (dragging, pasting), so the solve waits a moment.
 let solveTimer = null;
 function scheduleSolve() {
   clearTimeout(solveTimer);
-  const need = Solver.minPoints(state.opts);
-  if (state.img && activePoints().length >= need) { state.solving = true; renderPill(); }
+  if (state.img && activePoints().length >= Solver.minPoints(state.opts)) { state.solving = true; renderPill(); }
   solveTimer = setTimeout(runSolve, 160);
 }
 function runSolve() {
@@ -1926,15 +2257,15 @@ function runSolve() {
     }
   }
   state.solving = false;
-  renderSolution(); renderTable(); drawPhoto(); renderSteps();
-  scene.syncCamera();
+  renderSolution(); renderTable(); renderSteps(); requestPhoto();
+  scene.syncGraphics(); scene.syncCamera();
   if (state.cameraMode) { if (solved()) scene.applyCameraView(false); else exitCameraMode(); }
 }
 $('#optPP').onchange = (e) => { state.opts.freePP = e.target.checked; scheduleSolve(); };
 $('#optK1').onchange = (e) => { state.opts.k1 = e.target.checked; scheduleSolve(); };
 
 // ======================================================================
-// rendering: table, solution, steps, hints
+// rendering: table, solution, progress steps, prompts
 // ======================================================================
 const ICONS = {
   photo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><circle cx="8" cy="8" r="2.2"/></svg>',
@@ -1942,13 +2273,17 @@ const ICONS = {
   locate: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="4.5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>',
   del: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/></svg>',
 };
+const TABLE_HEAD = `<thead>
+  <tr class="grp"><th></th><th colspan="2" class="g" data-tip="Where the point is in the photo">Photo · px</th><th class="c-gap"></th><th colspan="3" class="g" data-tip="Where the point is on the mesh">Scene · EPSG:3857 · m</th><th class="c-gap"></th><th colspan="2" class="g" data-tip="How each pair fits the solved camera">Solution</th><th class="c-fill"></th><th></th></tr>
+  <tr class="sub"><th class="c-id" data-tip="Point number. Points are always numbered 1, 2, 3… Deleting one renumbers the rest.">#</th><th class="num" data-tip="Pixels from the left edge of the photo">u</th><th class="num" data-tip="Pixels from the top edge of the photo">v</th><th class="c-gap"></th><th class="num" data-tip="Easting in Web Mercator (EPSG:3857)">X</th><th class="num" data-tip="Northing in Web Mercator (EPSG:3857)">Y</th><th class="num" data-tip="Height in meters, in the mesh's height system">Z</th><th class="c-gap"></th><th class="num" data-tip-title="Residual" data-tip="How far, in photo pixels, the solved camera misses this pair. Red means much worse than the rest: the pair may be matched to the wrong feature.">Residual · px</th><th class="c-use" data-tip="Include the pair in the solution. Switched-off pairs are kept but ignored.">Use</th><th class="c-fill"></th><th class="c-actions"></th></tr>
+</thead>`;
 
 function renderTable() {
   const wrap = $('#tableWrap');
-  const complete = state.points.filter(isComplete).length;
-  $('#pairCount').textContent = state.points.length ? `${complete} paired${state.points.length > complete ? ` · ${state.points.length - complete} waiting` : ''}` : '0';
-  $('#btnCopyCsv').disabled = $('#btnClear').disabled = !state.points.length;
-  if (!state.points.length) {
+  const n = state.points.length, complete = state.points.filter(isComplete).length;
+  $('#pairCount').textContent = n ? `${complete} paired${n > complete ? ` · ${n - complete} waiting` : ''}` : '0';
+  $('#btnCopyCsv').disabled = $('#btnClear').disabled = !n;
+  if (!n) {
     wrap.innerHTML = `<div class="empty-table">
       <span class="label">How pairing works</span>
       <ol>
@@ -1963,61 +2298,57 @@ function renderTable() {
   const res = residualMap();
   const maxErr = Math.max(1, ...[...res.values()].map(r => r.err));
   const nextPhoto = pendingFor('photo'), nextScene = pendingFor('scene');
+  const missing = (cols, isNext, where) =>
+    `<td colspan="${cols}" class="num"><span class="missing ${isNext ? 'is-next' : ''}">${isNext ? `click in ${where}` : 'not placed'}</span></td>`;
+  const gap = '<td class="c-gap"></td>';
   const rows = state.points.map(p => {
     const r = res.get(p.id);
     const pidCls = !p.enabled ? 'is-off' : !isComplete(p) ? 'is-pending' : (r && r.suspect) ? 'is-suspect' : '';
     const photo = p.u != null
       ? `<td class="num coord">${fmt(p.u, 1)}</td><td class="num coord">${fmt(p.v, 1)}</td>`
-      : `<td colspan="2" class="num"><span class="missing ${nextPhoto === p ? 'is-next' : ''}">${nextPhoto === p ? 'click in photo' : 'not placed'}</span></td>`;
-    const gap = '<td class="c-gap"></td>';
+      : missing(2, nextPhoto === p, 'photo');
     const world = p.x != null
       ? `<td class="num coord">${fmt(p.x, 2)}</td><td class="num coord">${fmt(p.y, 2)}</td><td class="num coord">${fmt(p.z, 2)}</td>`
-      : `<td colspan="3" class="num"><span class="missing ${nextScene === p ? 'is-next' : ''}">${nextScene === p ? 'click in scene' : 'not placed'}</span></td>`;
+      : missing(3, nextScene === p, 'scene');
     const resid = r
-      ? `<span class="resid ${r.suspect ? 'is-suspect' : ''}" title="Δu ${fmt(r.du, 2)} px, Δv ${fmt(r.dv, 2)} px"><span class="coord">${fmt(r.err, 2)}</span><span class="bar"><i style="width:${Math.min(100, r.err / maxErr * 100)}%"></i></span></span>`
+      ? `<span class="resid ${r.suspect ? 'is-suspect' : ''}" data-tip="Δu ${fmt(r.du, 2)} px, Δv ${fmt(r.dv, 2)} px"><span class="coord">${fmt(r.err, 2)}</span><span class="bar"><i style="width:${Math.min(100, r.err / maxErr * 100)}%"></i></span></span>`
       : '';
     return `<tr data-id="${p.id}" class="${p.id === state.selected ? 'is-selected' : ''} ${p.enabled ? '' : 'is-off'}">
       <td class="c-id"><span class="pid ${pidCls}">${p.id}</span></td>
-      ${photo}${gap}
-      ${world}${gap}
+      ${photo}${gap}${world}${gap}
       <td class="num">${resid}</td>
-      <td class="c-use"><input type="checkbox" class="use-toggle" data-act="toggle" ${p.enabled ? 'checked' : ''} ${isComplete(p) ? '' : 'disabled'} aria-label="Use point ${p.id} in the solution" title="Use in solution"></td>
+      <td class="c-use"><input type="checkbox" class="use-toggle" data-act="toggle" ${p.enabled ? 'checked' : ''} ${isComplete(p) ? '' : 'disabled'} aria-label="Use point ${p.id} in the solution" data-tip="Use this pair in the solution"></td>
       <td class="c-fill"></td>
       <td class="c-actions"><span class="row-actions">
-        <button class="icon-btn" type="button" data-act="photo" title="Place again in the photo">${ICONS.photo}</button>
-        <button class="icon-btn" type="button" data-act="scene" title="Place again in the scene">${ICONS.scene}</button>
-        <button class="icon-btn" type="button" data-act="locate" title="Show in both views">${ICONS.locate}</button>
-        <button class="icon-btn danger" type="button" data-act="delete" title="Delete pair">${ICONS.del}</button>
+        <button class="icon-btn" type="button" data-act="photo" aria-label="Place point ${p.id} again in the photo" data-tip="Place again in the photo">${ICONS.photo}</button>
+        <button class="icon-btn" type="button" data-act="scene" aria-label="Place point ${p.id} again in the scene" data-tip="Place again in the scene">${ICONS.scene}</button>
+        <button class="icon-btn" type="button" data-act="locate" aria-label="Show point ${p.id} in both views" data-tip="Show in both views">${ICONS.locate}</button>
+        <button class="icon-btn danger" type="button" data-act="delete" aria-label="Delete point ${p.id}" data-tip="Delete pair" data-tip-key="Delete">${ICONS.del}</button>
       </span></td>
     </tr>`;
   }).join('');
-  wrap.innerHTML = `<table class="ptable">
-    <thead>
-      <tr class="grp"><th></th><th colspan="2" class="g">Photo · px</th><th class="c-gap"></th><th colspan="3" class="g">Scene · EPSG:3857 · m</th><th class="c-gap"></th><th colspan="2" class="g">Solution</th><th class="c-fill"></th><th></th></tr>
-      <tr class="sub"><th class="c-id">#</th><th class="num">u</th><th class="num">v</th><th class="c-gap"></th><th class="num">X</th><th class="num">Y</th><th class="num">Z</th><th class="c-gap"></th><th class="num">Residual · px</th><th class="c-use">Use</th><th class="c-fill"></th><th class="c-actions"></th></tr>
-    </thead><tbody>${rows}</tbody></table>`;
+  wrap.innerHTML = `<table class="ptable">${TABLE_HEAD}<tbody>${rows}</tbody></table>`;
 }
 $('#tableWrap').addEventListener('click', (e) => {
   const tr = e.target.closest('tr[data-id]'); if (!tr) return;
   const id = +tr.dataset.id;
   const act = e.target.closest('[data-act]')?.dataset.act;
-  if (act === 'toggle') { const p = byId(id); p.enabled = e.target.checked; changed(); return; }
-  if (act === 'photo') return startRepick(id, 'photo');
-  if (act === 'scene') return startRepick(id, 'scene');
-  if (act === 'locate') { select(id); return locate(id); }
-  if (act === 'delete') return removePoint(id);
-  select(id);
+  if (act === 'toggle') { byId(id).enabled = e.target.checked; changed(); }
+  else if (act === 'photo' || act === 'scene') startRepick(id, act);
+  else if (act === 'locate') locate(id);
+  else if (act === 'delete') removePoint(id);
+  else select(id);
 });
 
 function renderPill() {
-  const pill = $('#solPill');
   const s = state.sol;
   let cls = '', text = 'Waiting';
   if (state.solving) { cls = 'is-busy is-ok'; text = 'Solving'; }
   else if (!s || s.reason === 'too-few') { text = s ? `${s.n} of ${s.need} pairs` : 'Waiting'; }
-  else if (s.reason === 'error' || s.reason === 'behind') { cls = 'is-bad'; text = 'No solution'; }
-  else if (s.ok && s.warnings && s.warnings.length) { cls = 'is-warn'; text = 'Weak geometry'; }
-  else if (s.ok) { cls = 'is-ok'; text = 'Solved'; }
+  else if (!s.ok) { cls = 'is-bad'; text = 'No solution'; }
+  else if (s.warnings && s.warnings.length) { cls = 'is-warn'; text = 'Weak geometry'; }
+  else { cls = 'is-ok'; text = 'Solved'; }
+  const pill = $('#solPill');
   pill.className = 'pill ' + cls;
   pill.textContent = text;
 }
@@ -2026,7 +2357,6 @@ function readout(label, value, unit = '', sigma = null, sigmaUnit = '', digits =
   const sig = sigma != null && isFinite(sigma) ? `<small>± ${fmt(sigma, digits)}${sigmaUnit}</small>` : '';
   return `<dt>${label}</dt><dd>${value}${unit ? `<span class="unit">${unit}</span>` : ''}${sig}</dd>`;
 }
-
 const WARN_TEXT = {
   'lens-limit': ['Focal length hit the plausible limit.', 'The points cannot separate focal length from distance. Add points much nearer and much farther from the camera.'],
   'weak-geometry': ['The position is poorly determined.', 'Its uncertainty exceeds 10% of the distance to the points. Spread pairs across the whole photo and across depth.'],
@@ -2035,14 +2365,13 @@ const WARN_TEXT = {
 
 function renderSolution() {
   renderPill();
+  ['#btnCameraView', '#btnCopyCam', '#btnCopyAll'].forEach(id => { $(id).disabled = !solved(); });
+  updateCameraButton();
   const wrap = $('#solWrap');
   const s = state.sol;
-  const need = Solver.minPoints(state.opts);
-  const n = activePoints().length;
-  $('#btnCameraView') && ($('#btnCameraView').disabled = !solved());
   if (!s || s.reason === 'too-few' || !state.img) {
-    const total = Math.max(need, n);
-    const segs = Array.from({ length: Math.max(total, 8) }, (_, i) => `<i class="${i < Math.min(n, need) ? 'on' : i < n ? 'extra' : ''}"></i>`).join('');
+    const need = Solver.minPoints(state.opts), n = activePoints().length;
+    const segs = Array.from({ length: Math.max(need, n, 8) }, (_, i) => `<i class="${i < Math.min(n, need) ? 'on' : i < n ? 'extra' : ''}"></i>`).join('');
     wrap.innerHTML = `<div class="sol"><div class="progress">
       <span class="label">Pairs for a solution</span>
       <div class="segs">${segs}</div>
@@ -2058,7 +2387,7 @@ function renderSolution() {
   if (!s.ok) {
     const msg = s.reason === 'behind'
       ? 'The best fit puts some points behind the camera. One or more pairs are probably matched to the wrong feature. Check the pairs with the largest residuals or switch them off.'
-      : `The solver stopped with an error: ${s.message || 'unknown'}.`;
+      : `The solver stopped with an error: ${escapeHtml(s.message || 'unknown')}.`;
     wrap.innerHTML = `<div class="sol"><div class="warn is-bad"><strong>No valid camera found</strong><span>${msg}</span></div></div>`;
     return;
   }
@@ -2069,15 +2398,15 @@ function renderSolution() {
   const pitchTxt = `${c.pitch >= 0 ? '+' : ''}${fmt(c.pitch, 2)}° ${c.pitch >= 0 ? 'up' : 'down'}`;
   wrap.innerHTML = `<div class="sol">
     <div class="quality">
-      <div class="q"><span class="label">Pairs used</span><b>${s.n}</b></div>
-      <div class="q"><span class="label">RMS error</span><b>${fmt(s.rms, 2)}<small>px</small></b></div>
-      <div class="q"><span class="label">σ₀</span><b>${fmt(s.sigma0, 2)}<small>px</small></b></div>
-      <div class="q"><span class="label">Redundancy</span><b>${s.dof}</b></div>
+      <div class="q" data-tip="Pairs included in the solution"><span class="label">Pairs used</span><b>${s.n}</b></div>
+      <div class="q" data-tip-title="RMS error" data-tip="The typical miss between the marked points and where the solved camera projects them, in photo pixels. Lower is better."><span class="label">RMS error</span><b>${fmt(s.rms, 2)}<small>px</small></b></div>
+      <div class="q" data-tip-title="σ₀" data-tip="The RMS error corrected for the number of unknowns. It is the error the ± values are based on."><span class="label">σ₀</span><b>${fmt(s.sigma0, 2)}<small>px</small></b></div>
+      <div class="q" data-tip-title="Redundancy" data-tip="Measurements beyond the minimum the solution needs. More redundancy makes mistakes easier to spot."><span class="label">Redundancy</span><b>${s.dof}</b></div>
     </div>
     ${suspectWarn}${warns}
     <div class="groups">
       <div class="group">
-        <span class="label">Position</span>
+        <span class="label" data-tip="Where the photographer stood: X and Y in EPSG:3857, Z in meters in the mesh's height system. ± is one standard deviation in meters.">Position</span>
         <dl class="ro">
           ${readout('X', fmt(c.x, 2), '', sd.E, ' m E')}
           ${readout('Y', fmt(c.y, 2), '', sd.N, ' m N')}
@@ -2086,7 +2415,7 @@ function renderSolution() {
         </dl>
       </div>
       <div class="group">
-        <span class="label">Orientation</span>
+        <span class="label" data-tip="Heading is clockwise from true north. Tilt 0° looks straight down, 90° at the horizon. Positive roll means the photo is rotated clockwise against a level camera.">Orientation</span>
         <dl class="ro">
           ${readout('Heading', fmt(c.heading, 2), '°', sd.heading, '°', 3)}
           ${readout('Tilt', fmt(c.tilt, 2), '°', sd.tilt, '°', 3)}
@@ -2095,47 +2424,33 @@ function renderSolution() {
         </dl>
       </div>
       <div class="group">
-        <span class="label">Lens</span>
+        <span class="label" data-tip="Focal length in photo pixels, the field of view across and down the photo, and the equivalent focal length on a 35 mm camera.">Lens</span>
         <dl class="ro">
           ${readout('Focal', fmt(c.f, 1), 'px', sd.f, ' px', 1)}
-          ${readout("Field of view", `${fmt(c.hfov, 1)} × ${fmt(c.vfov, 1)}°`)}
+          ${readout('Field of view', `${fmt(c.hfov, 1)} × ${fmt(c.vfov, 1)}°`)}
           ${readout('35 mm equiv.', fmt(c.f35, 1), 'mm')}
           ${state.opts.freePP ? readout('Image center', `${fmt(c.cx, 1)}, ${fmt(c.cy, 1)}`, 'px') : ''}
           ${state.opts.k1 ? readout('k1', fmt(c.k1, 4), '', sd.k1, '', 4) : ''}
         </dl>
       </div>
     </div>
-    <div class="sol-actions">
-      <button class="btn btn-fixer" type="button" id="btnCameraView">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>
-        View from camera</button>
-      <button class="btn" type="button" id="btnCopyCam">Copy camera</button>
-      <button class="btn" type="button" id="btnCopyAll">Copy everything</button>
-    </div>
     <p class="sol-note">± values are one standard deviation from the least-squares fit. They shrink as you add well-spread pairs. Tilt follows ArcGIS: 0° looks straight down, 90° at the horizon. Z uses the same height reference as the scene.</p>
   </div>`;
-  $('#btnCameraView').onclick = () => (state.cameraMode ? exitCameraMode() : enterCameraMode());
-  $('#btnCopyCam').onclick = () => copyText(JSON.stringify(cameraExport(), null, 2), 'Camera copied as JSON');
-  $('#btnCopyAll').onclick = () => copyText(JSON.stringify(fullExport(), null, 2), 'Points and camera copied as JSON');
-  updateCameraButton();
 }
 
 function renderSteps() {
-  const steps = {
-    photo: !!state.img,
-    pairs: activePoints().length >= Solver.minPoints(state.opts),
-    camera: solved(),
-  };
-  const current = ['photo', 'pairs', 'camera'].find(k => !steps[k]);
+  const done = { photo: !!state.img, pairs: activePoints().length >= Solver.minPoints(state.opts), camera: solved() };
+  const current = ['photo', 'pairs', 'camera'].find(k => !done[k]);
   document.querySelectorAll('.step').forEach(el => {
-    const k = el.dataset.step;
-    el.classList.toggle('is-done', steps[k]);
-    el.classList.toggle('is-current', k === current);
+    el.classList.toggle('is-done', done[el.dataset.step]);
+    el.classList.toggle('is-current', el.dataset.step === current);
   });
   const n = state.points.filter(isComplete).length;
-  $('#stepPairs').textContent = n ? n : '';
+  $('#stepPairs').textContent = n || '';
 }
 
+// Live prompts at the bottom of the panes, only while a point is waiting.
+// General instructions live in Help.
 function renderHints() {
   const ph = $('#photoHint'), sh = $('#sceneHint');
   const pPhoto = pendingFor('photo'), pScene = pendingFor('scene');
@@ -2143,56 +2458,52 @@ function renderHints() {
   $('#sceneBody').classList.toggle('is-expecting', !!pScene);
   $('#viewDiv').classList.toggle('is-placing', !!pScene);
   ph.classList.remove('is-active'); sh.classList.remove('is-active');
-  // only live prompts are shown here; general instructions live in Help
-  ph.hidden = true; sh.hidden = true;
-  if (!state.img) return;
-  const show = (el) => { el.hidden = el === sh && state.cameraMode; };
-  if (state.repick || pScene || pPhoto) { show(ph); show(sh); }
+  const busy = state.img && (state.repick || pScene || pPhoto);
+  ph.hidden = !busy;
+  sh.hidden = !busy || state.cameraMode;
+  if (!busy) return;
+  const num = (id) => `<span class="num">${id}</span>`;
   if (state.repick) {
-    const t = state.repick.side === 'photo' ? ph : sh;
-    const o = state.repick.side === 'photo' ? sh : ph;
+    const [t, o] = state.repick.side === 'photo' ? [ph, sh] : [sh, ph];
     t.classList.add('is-active');
-    t.innerHTML = `Click the new position of point <span class="num">${state.repick.id}</span> · <kbd>Esc</kbd> cancels`;
-    o.innerHTML = state.repick.side === 'photo' ? 'Re-placing in the photo' : 'Re-placing in the scene';
-    return;
-  }
-  if (pScene) {
+    t.innerHTML = `Click the new position of point ${num(state.repick.id)} · <kbd>Esc</kbd> cancels`;
+    o.innerHTML = `Re-placing in the ${state.repick.side}`;
+  } else if (pScene) {
     sh.classList.add('is-active');
-    sh.innerHTML = `Now click point <span class="num">${pScene.id}</span> on the mesh`;
-    ph.innerHTML = `Point <span class="num">${pScene.id}</span> waits for its scene position · <kbd>Esc</kbd> discards it`;
-  } else if (pPhoto) {
+    sh.innerHTML = `Now click point ${num(pScene.id)} on the mesh`;
+    ph.innerHTML = `Point ${num(pScene.id)} waits for its scene position · <kbd>Esc</kbd> discards it`;
+  } else {
     ph.classList.add('is-active');
-    ph.innerHTML = `Now click point <span class="num">${pPhoto.id}</span> in the photo${solved() ? ' · the dashed ring shows where it should be' : ''}`;
-    sh.innerHTML = `Point <span class="num">${pPhoto.id}</span> waits for its photo position · <kbd>Esc</kbd> discards it`;
+    ph.innerHTML = `Now click point ${num(pPhoto.id)} in the photo${solved() ? ' · the dashed ring shows where it should be' : ''}`;
+    sh.innerHTML = `Point ${num(pPhoto.id)} waits for its photo position · <kbd>Esc</kbd> discards it`;
   }
 }
 
-function renderAll() { renderTable(); renderHints(); renderSteps(); drawPhoto(); scene.syncGraphics(); }
+function renderAll() { renderTable(); renderHints(); renderSteps(); requestPhoto(); scene.syncGraphics(); }
 function changed() { renderAll(); scheduleSolve(); }
 
 // ======================================================================
-// export / import
+// export and import
 // ======================================================================
+const round = (v, d) => (v == null ? null : +v.toFixed(d));
 function cameraExport() {
-  const s = state.sol; if (!solved()) return null;
-  const c = s.camera, sd = s.std || {};
-  const out = {
+  if (!solved()) return null;
+  const s = state.sol, c = s.camera, sd = s.std || {};
+  const sigma = { eastM: sd.E, northM: sd.N, upM: sd.U, headingDeg: sd.heading, tiltDeg: sd.tilt, rollDeg: sd.roll, focalPx: sd.f, cxPx: sd.cx, cyPx: sd.cy, k1: sd.k1 };
+  return {
     spatialReference: { wkid: 3857 },
-    position: { x: +c.x.toFixed(3), y: +c.y.toFixed(3), z: +c.z.toFixed(3) },
-    wgs84: { longitude: +c.lon.toFixed(8), latitude: +c.lat.toFixed(8) },
-    heading: +c.heading.toFixed(4), tilt: +c.tilt.toFixed(4), pitch: +c.pitch.toFixed(4), roll: +c.roll.toFixed(4),
-    focalLengthPx: +c.f.toFixed(2),
-    principalPointPx: { x: +c.cx.toFixed(2), y: +c.cy.toFixed(2) },
-    k1: state.opts.k1 ? +c.k1.toFixed(6) : 0,
-    horizontalFieldOfView: +c.hfov.toFixed(3), verticalFieldOfView: +c.vfov.toFixed(3), diagonalFieldOfView: +c.dfov.toFixed(3),
-    focalLength35mmEquivalent: +c.f35.toFixed(1),
-    precision1Sigma: Object.fromEntries(Object.entries({
-      eastM: sd.E, northM: sd.N, upM: sd.U, headingDeg: sd.heading, tiltDeg: sd.tilt, rollDeg: sd.roll, focalPx: sd.f, cxPx: sd.cx, cyPx: sd.cy, k1: sd.k1,
-    }).filter(([, v]) => v != null).map(([k, v]) => [k, +v.toPrecision(4)])),
-    quality: { pairsUsed: s.n, rmsPx: +s.rms.toFixed(3), sigma0Px: +s.sigma0.toFixed(3), redundancy: s.dof, warnings: s.warnings },
+    position: { x: round(c.x, 3), y: round(c.y, 3), z: round(c.z, 3) },
+    wgs84: { longitude: round(c.lon, 8), latitude: round(c.lat, 8) },
+    heading: round(c.heading, 4), tilt: round(c.tilt, 4), pitch: round(c.pitch, 4), roll: round(c.roll, 4),
+    focalLengthPx: round(c.f, 2),
+    principalPointPx: { x: round(c.cx, 2), y: round(c.cy, 2) },
+    k1: state.opts.k1 ? round(c.k1, 6) : 0,
+    horizontalFieldOfView: round(c.hfov, 3), verticalFieldOfView: round(c.vfov, 3), diagonalFieldOfView: round(c.dfov, 3),
+    focalLength35mmEquivalent: round(c.f35, 1),
+    precision1Sigma: Object.fromEntries(Object.entries(sigma).filter(([, v]) => v != null).map(([k, v]) => [k, +v.toPrecision(4)])),
+    quality: { pairsUsed: s.n, rmsPx: round(s.rms, 3), sigma0Px: round(s.sigma0, 3), redundancy: s.dof, warnings: s.warnings },
     conventions: 'heading clockwise from true north; tilt 0 = straight down, 90 = horizon (ArcGIS); pitch = tilt - 90; roll positive = image rotated clockwise vs. a level camera',
   };
-  return out;
 }
 function fullExport() {
   return {
@@ -2201,698 +2512,872 @@ function fullExport() {
     photo: state.img ? { name: state.imgName, width: state.W, height: state.H, pixelOrigin: 'top-left corner, v down' } : null,
     spatialReference: { wkid: 3857 },
     options: { ...state.opts },
-    points: state.points.map(p => ({ id: p.id, u: p.u == null ? null : +p.u.toFixed(2), v: p.v == null ? null : +p.v.toFixed(2), x: p.x == null ? null : +p.x.toFixed(3), y: p.y == null ? null : +p.y.toFixed(3), z: p.z == null ? null : +p.z.toFixed(3), enabled: p.enabled })),
+    points: state.points.map(p => ({ id: p.id, u: round(p.u, 2), v: round(p.v, 2), x: round(p.x, 3), y: round(p.y, 3), z: round(p.z, 3), enabled: p.enabled })),
     camera: cameraExport(),
   };
 }
 function csvExport() {
   const res = residualMap();
-  const lines = ['id,u,v,x,y,z,enabled,residual_px'];
-  state.points.forEach(p => {
+  const cell = (v, d) => (v == null ? '' : v.toFixed(d));
+  return ['id,u,v,x,y,z,enabled,residual_px', ...state.points.map(p => {
     const r = res.get(p.id);
-    lines.push([p.id, p.u?.toFixed(2) ?? '', p.v?.toFixed(2) ?? '', p.x?.toFixed(3) ?? '', p.y?.toFixed(3) ?? '', p.z?.toFixed(3) ?? '', p.enabled ? 1 : 0, r ? r.err.toFixed(3) : ''].join(','));
-  });
-  return lines.join('\n');
+    return [p.id, cell(p.u, 2), cell(p.v, 2), cell(p.x, 3), cell(p.y, 3), cell(p.z, 3), p.enabled ? 1 : 0, r ? r.err.toFixed(3) : ''].join(',');
+  })].join('\n');
 }
-$('#btnCopyCsv').onclick = () => copyText(csvExport(), `${state.points.length} points copied as CSV`);
-$('#btnClear').onclick = () => confirmBox('Remove all point pairs?', `This deletes ${state.points.length} pair${state.points.length > 1 ? 's' : ''}. Copy them first if you want to keep them.`, [
+$('#btnCopyCsv').onclick = () => copyText(csvExport(), `${plural(state.points.length, 'point')} copied as CSV`);
+$('#btnCopyCam').onclick = () => copyText(JSON.stringify(cameraExport(), null, 2), 'Camera copied as JSON');
+$('#btnCopyAll').onclick = () => copyText(JSON.stringify(fullExport(), null, 2), 'Points and camera copied as JSON');
+$('#btnClear').onclick = () => confirmBox('Remove all point pairs?', `This deletes ${plural(state.points.length, 'pair')}. Copy them first if you want to keep them.`, [
   { label: 'Cancel' },
-  { label: 'Remove all', cls: 'btn-primary', run: () => { state.points = []; state.nextId = 1; state.selected = null; state.repick = null; changed(); } },
+  { label: 'Remove all', cls: 'btn-primary', run: () => { setPoints([]); changed(); } },
 ]);
-$('#btnImport').onclick = () => { $('#importErr').hidden = true; openModal('#importModal'); };
+
+// Reads the JSON from "Copy all", or CSV with columns id,u,v,x,y,z[,enabled].
+// Only numbers, coordinates and the Use flag are read; residuals and camera
+// values are ignored and always recalculated. Returns { points, options }.
 function parseImport(text) {
-  text = text.trim();
+  text = text.replace(/^﻿/, '').trim(); // spreadsheets may add a byte-order mark
   if (!text) throw new Error('Paste some points first.');
-  const num = (v) => (v === '' || v == null || v === 'null') ? null : (isFinite(+v) ? +v : NaN);
-  let rows;
+  const num = (v) => {
+    if (v == null) return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+    const s = String(v).trim();
+    if (s === '' || s.toLowerCase() === 'null') return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : NaN;
+  };
+  let rows, options = null;
   if (text[0] === '{' || text[0] === '[') {
-    const data = JSON.parse(text);
-    rows = Array.isArray(data) ? data : data.points;
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error('This is not valid JSON.'); }
+    rows = Array.isArray(data) ? data : data && data.points;
     if (!Array.isArray(rows)) throw new Error('The JSON has no "points" list.');
-    if (data.options) { state.opts.freePP = !!data.options.freePP; state.opts.k1 = !!data.options.k1; $('#optPP').checked = state.opts.freePP; $('#optK1').checked = state.opts.k1; }
+    if (data.options) options = data.options;
   } else {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
-    const sep = lines[0].includes(';') && !lines[0].includes(',') ? ';' : lines[0].includes('\t') ? '\t' : ',';
-    const head = lines[0].split(sep).map(h => h.trim().toLowerCase());
-    const hasHead = head.includes('u') && head.includes('x');
+    const first = lines[0];
+    const sep = first.includes('\t') ? '\t' : first.includes(';') ? ';' : ',';
+    // with tab or semicolon separators a comma is a decimal comma (common in European spreadsheets)
+    const cell = (s) => { s = s.trim().replace(/^"(.*)"$/, '$1').trim(); return sep === ',' ? s : s.replace(',', '.'); };
+    const head = first.split(sep).map(h => cell(h).toLowerCase());
+    const hasHead = head.includes('u') || head.includes('x');
     const cols = hasHead ? head : ['id', 'u', 'v', 'x', 'y', 'z', 'enabled'];
-    rows = lines.slice(hasHead ? 1 : 0).map(l => { const c = l.split(sep); const o = {}; cols.forEach((k, i) => { o[k] = c[i] != null ? c[i].trim() : ''; }); return o; });
+    rows = lines.slice(hasHead ? 1 : 0).map(l => {
+      const c = l.split(sep), o = {};
+      cols.forEach((k, i) => { o[k] = c[i] != null ? cell(c[i]) : ''; });
+      return o;
+    });
   }
-  // Only id, coordinates and the Use flag are read. Residuals or camera values in
-  // the pasted text are ignored; the solver recalculates them.
-  const pts = rows.map((r, i) => {
+  if (!rows.length) throw new Error('No points found.');
+  const points = rows.map((r, i) => {
+    const row = `Row ${i + 1}`;
+    if (!r || typeof r !== 'object') throw new Error(`${row} is not a point.`);
     const idv = num(r.id);
-    const p = { id: Number.isInteger(idv) && idv > 0 ? idv : i + 1, u: num(r.u), v: num(r.v), x: num(r.x), y: num(r.y), z: num(r.z), enabled: !(r.enabled === false || r.enabled === 0 || r.enabled === '0' || r.enabled === 'false') };
-    if ([p.u, p.v, p.x, p.y, p.z].some(v => Number.isNaN(v))) throw new Error(`Row ${i + 1} has a value that is not a number.`);
-    if ((p.u == null) !== (p.v == null)) throw new Error(`Row ${i + 1} needs both u and v.`);
-    if ((p.x == null) !== (p.y == null)) throw new Error(`Row ${i + 1} needs both x and y.`);
+    const off = r.enabled === false || r.enabled === 0 || /^(0|false|no)$/i.test(String(r.enabled ?? '').trim());
+    const p = { id: Number.isFinite(idv) ? idv : i + 1, u: num(r.u), v: num(r.v), x: num(r.x), y: num(r.y), z: num(r.z), enabled: !off };
+    if ([p.u, p.v, p.x, p.y, p.z].some(Number.isNaN)) throw new Error(`${row} has a value that is not a number.`);
+    if ((p.u == null) !== (p.v == null)) throw new Error(`${row} needs both u and v.`);
+    if ((p.x == null) !== (p.y == null)) throw new Error(`${row} needs both x and y.`);
+    if (p.u == null && p.x == null) throw new Error(`${row} has neither photo nor scene coordinates.`);
     if (p.x != null && p.z == null) p.z = 0;
-    if (p.u == null && p.x == null) throw new Error(`Row ${i + 1} has neither photo nor scene coordinates.`);
     return p;
   });
-  const ids = new Set();
-  pts.forEach(p => { while (ids.has(p.id)) p.id++; ids.add(p.id); });
-  return pts;
+  return { points, options };
 }
+$('#btnImport').onclick = () => { $('#importText').value = ''; $('#importErr').hidden = true; openModal('#importModal'); };
 $('#importForm').onsubmit = (e) => {
   e.preventDefault();
-  try {
-    const pts = parseImport($('#importText').value);
-    state.points = pts; state.nextId = Math.max(0, ...pts.map(p => p.id)) + 1;
-    state.selected = null; state.repick = null;
-    closeModal('#importModal');
-    changed();
-    const outside = state.img ? pts.filter(p => p.u != null && !insideImage(p.u, p.v)).length : 0;
-    toast(`${pts.length} points loaded${outside ? ` · ${outside} fall outside this photo` : ''}`, outside > 0);
-  } catch (err) {
+  let parsed;
+  try { parsed = parseImport($('#importText').value); } catch (err) {
     const el = $('#importErr'); el.textContent = err.message; el.hidden = false;
+    return;
   }
+  $('#importText').value = '';
+  closeModal('#importModal');
+  loadPoints(parsed);
+  const n = parsed.points.length;
+  const outside = state.img ? parsed.points.filter(p => p.u != null && !insideImage(p.u, p.v)).length : 0;
+  toast(`${plural(n, 'point')} loaded${outside ? ` · ${outside} fall outside this photo` : ''}`, outside > 0);
 };
 
 // ======================================================================
 // keyboard
 // ======================================================================
 document.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
-  const modalOpen = [...document.querySelectorAll('.modal-back')].some(m => !m.hidden);
+  const modals = openModals();
+  // Esc closes a dialog even while typing in it
+  if (e.key === 'Escape' && modals.length) { modals[modals.length - 1].hidden = true; return; }
+  const typing = e.target.closest && e.target.closest('input, textarea, select, [contenteditable]');
+  if (typing || modals.length || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'Escape') {
-    if (modalOpen) { document.querySelectorAll('.modal-back').forEach(m => { m.hidden = true; }); return; }
     if (state.cameraMode) { exitCameraMode(); return; }
     if (state.repick) { state.repick = null; renderAll(); return; }
-    const half = state.points.find(p => !isComplete(p));
-    if (half && (pendingFor('photo') === half || pendingFor('scene') === half)) { removePoint(half.id); toast(`Point ${half.id} discarded`); return; }
+    const half = pendingFor('photo') || pendingFor('scene');
+    if (half) { removePoint(half.id); toast(`Point ${half.id} discarded`); return; }
+    if (scene.stopLook()) return;
     if (state.selected) { state.selected = null; renderAll(); }
     return;
   }
-  if (modalOpen) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) { e.preventDefault(); removePoint(state.selected); return; }
-  if (e.key === 'f' || e.key === 'F') { fitPhoto(); return; }
-  if (e.key === 'm' || e.key === 'M') { $('#optLoupe').click(); return; }
-  if (e.key === '?') { openModal('#helpModal'); return; }
-  if (e.key === '+' || e.key === '=') { zoomAt(1.5); return; }
-  if (e.key === '-' || e.key === '_') { zoomAt(1 / 1.5); }
+  if (e.key === 'f' || e.key === 'F') fitPhoto();
+  else if (e.key === 'm' || e.key === 'M') $('#optLoupe').click();
+  else if (e.key === '?') openModal('#helpModal');
+  else if (e.key === '+' || e.key === '=') zoomAt(1.5);
+  else if (e.key === '-' || e.key === '_') zoomAt(1 / 1.5);
 });
 
 // ======================================================================
-// splitter
+// pane splitters
 // ======================================================================
-(() => {
+function dragHandle(el, onMove) {
+  el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); el.classList.add('is-dragging'); });
+  el.addEventListener('pointermove', (e) => { if (el.hasPointerCapture(e.pointerId)) onMove(e); });
+  el.addEventListener('lostpointercapture', () => el.classList.remove('is-dragging'));
+}
+{ // photo | scene
   const sp = $('#splitter'), ws = $('#workspace');
-  let active = false;
-  sp.addEventListener('pointerdown', (e) => { active = true; sp.setPointerCapture(e.pointerId); sp.classList.add('is-dragging'); });
-  sp.addEventListener('pointermove', (e) => {
-    if (!active) return;
-    const r = ws.getBoundingClientRect();
-    const pct = Math.min(80, Math.max(20, (e.clientX - r.left) / r.width * 100));
-    ws.style.setProperty('--left', pct.toFixed(2) + '%');
-  });
-  sp.addEventListener('pointerup', () => {
-    active = false; sp.classList.remove('is-dragging');
-  });
+  const setPct = (pct) => ws.style.setProperty('--left', clamp(pct, 20, 80).toFixed(2) + '%');
+  dragHandle(sp, (e) => { const r = ws.getBoundingClientRect(); setPct((e.clientX - r.left) / r.width * 100); });
   sp.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const cur = parseFloat(ws.style.getPropertyValue('--left')) || 50;
-    const pct = Math.min(80, Math.max(20, cur + (e.key === 'ArrowLeft' ? -2 : 2)));
-    ws.style.setProperty('--left', pct + '%');
+    setPct((parseFloat(ws.style.getPropertyValue('--left')) || 50) + (e.key === 'ArrowLeft' ? -2 : 2));
   });
-})();
-
-// dock height
-(() => {
+}
+{ // panes | dock
   const sp = $('#dockSplitter'), app = $('.app');
-  const clampH = (h) => {
-    const top = $('.topbar').getBoundingClientRect().height;
-    return Math.round(Math.min(Math.max(h, 120), app.clientHeight - top - 7 - 160));
+  const setH = (h) => {
+    const room = app.clientHeight - $('.topbar').offsetHeight - sp.offsetHeight - 160; // leave the panes at least 160 px
+    app.style.setProperty('--dock-h', Math.round(clamp(h, 120, room)) + 'px');
   };
-  const setH = (h) => { app.style.setProperty('--dock-h', clampH(h) + 'px'); };
-  let active = false;
-  sp.addEventListener('pointerdown', (e) => { active = true; sp.setPointerCapture(e.pointerId); sp.classList.add('is-dragging'); });
-  sp.addEventListener('pointermove', (e) => {
-    if (!active) return;
-    setH(app.getBoundingClientRect().bottom - e.clientY - 3.5);
-  });
-  sp.addEventListener('pointerup', () => {
-    active = false; sp.classList.remove('is-dragging');
-  });
-  sp.addEventListener('dblclick', () => { app.style.removeProperty('--dock-h'); });
+  dragHandle(sp, (e) => setH(app.getBoundingClientRect().bottom - e.clientY - sp.offsetHeight / 2));
+  sp.addEventListener('dblclick', () => app.style.removeProperty('--dock-h'));
   sp.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     e.preventDefault();
-    const cur = $('.dock').getBoundingClientRect().height;
-    setH(cur + (e.key === 'ArrowUp' ? 32 : -32));
+    setH($('.dock').offsetHeight + (e.key === 'ArrowUp' ? 32 : -32));
   });
   window.addEventListener('resize', () => { const v = parseFloat(app.style.getPropertyValue('--dock-h')); if (v) setH(v); });
-})();
+}
 
 // ======================================================================
-// camera view mode (photo overlaid on the scene from the solved camera)
+// camera view: the scene seen through the solved camera, photo overlaid
 // ======================================================================
 function enterCameraMode() {
-  if (!solved() || !scene.ready) { if (!scene.ready) toast('The 3D scene is not ready yet', true); return; }
+  if (!solved()) return;
+  if (!scene.ready) { toast('The 3D scene is not ready yet', true); return; }
   state.cameraMode = true;
   $('#cameraHud').hidden = false;
   scene.applyCameraView(true);
   renderHints(); updateCameraButton();
 }
-function exitCameraMode() {
+// stay = keep the scene at the camera position and unlock navigation
+function exitCameraMode(stay = false) {
   if (!state.cameraMode) return;
   state.cameraMode = false;
   $('#overlayWrap').hidden = true;
   $('#cameraHud').hidden = true;
-  scene.releaseCameraView();
+  scene.releaseCameraView(stay);
   renderHints(); updateCameraButton();
 }
 function updateCameraButton() {
-  const b = $('#btnCameraView'); if (!b) return;
-  b.lastChild.textContent = state.cameraMode ? ' Leave camera view' : ' View from camera';
+  const b = $('#btnCameraView');
+  b.querySelector('span').textContent = state.cameraMode ? 'Leave camera view' : 'View from camera';
+  b.dataset.tip = state.cameraMode ? 'Return to the view you had before' : 'Look at the scene through the solved camera, with the photo laid over it';
 }
-$('#btnExitCamera').onclick = exitCameraMode;
+$('#btnCameraView').onclick = () => (state.cameraMode ? exitCameraMode() : enterCameraMode());
+$('#btnExitCamera').onclick = () => exitCameraMode(false);
+$('#btnExplore').onclick = () => exitCameraMode(true);
+
+// the filled part of a slim slider's track (WebKit has no ::range-progress)
 const paintRange = (el) => el.style.setProperty('--fill', (el.value - el.min) / (el.max - el.min) * 100 + '%');
-$('#overlayOpacity').oninput = (e) => {
-  $('#overlayImg').style.opacity = e.target.value / 100;
-  $('#opacityValue').textContent = e.target.value + '%';
-  paintRange(e.target);
-};
-paintRange($('#overlayOpacity'));
-$('#clipInfoBtn').onclick = () => {
-  const box = $('#clipInfo'), open = box.hidden;
-  box.hidden = !open; $('#clipInfoBtn').setAttribute('aria-expanded', String(open));
-};
+function setOpacity(v) {
+  v = Math.round(clamp(v, 0, 100));
+  const r = $('#overlayOpacity');
+  r.value = v; paintRange(r);
+  $('#overlayImg').style.opacity = v / 100;
+  $('#opacityValue').textContent = v + '%';
+}
+$('#overlayOpacity').oninput = (e) => setOpacity(+e.target.value);
+$('#opacityToggle').onclick = () => setOpacity(+$('#overlayOpacity').value > 0 ? 0 : 100);
+
+// Click a value to type an exact number: Enter or leaving the field applies it, Esc cancels.
+function makeEditable(btn, { get, set, min, max }) {
+  btn.addEventListener('click', () => {
+    hideTip();
+    const input = document.createElement('input');
+    input.className = 'hud-val-input'; input.type = 'text'; input.inputMode = 'decimal';
+    input.value = String(get());
+    input.setAttribute('aria-label', btn.getAttribute('aria-label') || 'Value');
+    btn.hidden = true; btn.after(input); input.focus(); input.select();
+    let done = false;
+    const finish = (apply) => {
+      if (done) return; done = true;
+      if (apply) {
+        const v = parseFloat(input.value.replace(',', '.'));
+        if (isFinite(v)) set(clamp(v, min, max)); else toast('Type a number', true);
+      }
+      input.remove(); btn.hidden = false;
+      btn.dataset.quietFocus = '1'; btn.focus(); // no tooltip for this programmatic focus
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  });
+}
+makeEditable($('#opacityValue'), { get: () => +$('#overlayOpacity').value, set: setOpacity, min: 0, max: 100 });
+$('#sceneFit').onclick = () => scene.fitPoints(false);
 
 // ======================================================================
-// ArcGIS scene
+// ArcGIS scene, loaded on demand
 // ======================================================================
-const scene = {
-  ready: false,
-  syncGraphics() {}, syncCamera() {}, goToPoint() {}, goToPoints() {}, applyCameraView() {}, releaseCameraView() {},
-};
-
 function showBanner(html, isError = false) {
   const b = $('#sceneBanner');
   b.innerHTML = html; b.hidden = !html;
   b.classList.toggle('is-error', isError);
 }
-
+const sceneFailed = (msg) => showBanner(`<strong>The 3D scene could not load.</strong><p>${escapeHtml(msg)}</p>`, true);
 $('#btnLayer').onclick = () => toast('The 3D scene is still loading', true);
-if (typeof window.require !== 'function') {
-  showBanner('<strong>The 3D scene could not load.</strong><p>The ArcGIS library did not arrive. Check the internet connection and reload. The photo side still works.</p>', true);
-} else {
-  window.require([
-    'esri/config', 'esri/Map', 'esri/WebScene', 'esri/views/SceneView', 'esri/layers/Layer', 'esri/layers/GraphicsLayer',
-    'esri/Graphic', 'esri/geometry/Point', 'esri/geometry/Polyline', 'esri/Camera', 'esri/portal/PortalItem', 'esri/core/reactiveUtils',
-    'esri/Ground', 'esri/layers/WMSLayer', 'esri/layers/WMTSLayer', 'esri/layers/GeoJSONLayer',
-    'esri/geometry/Polygon', 'esri/layers/support/SceneModification', 'esri/layers/support/SceneModifications',
-  ], (esriConfig, EsriMap, WebScene, SceneView, Layer, GraphicsLayer, Graphic, Point, Polyline, Camera, PortalItem, reactiveUtils, Ground, WMSLayer, WMTSLayer, GeoJSONLayer, Polygon, SceneModification, SceneModifications) => {
-    const SR = { wkid: 3857 };
-    const PRAGUE_MESH = {
-      url: 'https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/praha2023_merged_WM/SceneServer',
-      title: '3D Mesh Model (Prague)',
-    };
-    const map = new EsriMap({ ground: new Ground({ surfaceColor: [36, 34, 31] }) });
-    const camLayer = new GraphicsLayer({ title: 'Solved camera', elevationInfo: { mode: 'absolute-height' }, listMode: 'hide' });
-    map.add(camLayer);
 
-    const view = new SceneView({
-      container: 'viewDiv',
-      map,
-      spatialReference: SR,
-      viewingMode: 'global',
-      // looking north-east across the river towards the Old Town
-      camera: { position: { longitude: 14.405, latitude: 50.072, z: 1100 }, heading: 34, tilt: 66 },
-      qualityProfile: 'high',
-      popupEnabled: false,
-      environment: { starsEnabled: false, atmosphereEnabled: true },
-      ui: { components: ['zoom', 'navigation-toggle', 'compass'] },
-    });
-    view.ui.move(['zoom', 'navigation-toggle', 'compass'], 'top-right');
-
-    // ---- layers
-    const mesh = { layer: null, status: 'loading', message: '' };
-    const custom = []; // {src, layer, title, problem}
-    const KIND = {
-      'integrated-mesh': 'Integrated mesh', 'integrated-mesh-3dtiles': '3D Tiles mesh', scene: '3D objects', 'building-scene': 'Building scene', 'point-cloud': 'Point cloud',
-      feature: 'Features', 'map-image': 'Map image', tile: 'Tiles', 'vector-tile': 'Vector tiles', imagery: 'Imagery', 'imagery-tile': 'Imagery tiles',
-      elevation: 'Elevation (ground)', wms: 'WMS', wmts: 'WMTS', geojson: 'GeoJSON', 'web-tile': 'Web tiles', voxel: 'Voxel', group: 'Group',
-    };
-    const kindOf = (l) => KIND[l.type] || l.type || 'Layer';
-    const TILED = ['tile', 'vector-tile', 'imagery-tile', 'elevation', 'web-tile', 'wmts'];
-
-    function renderLayerMeta() {
-      const m = $('#layerMeta');
-      const base = mesh.status === 'ok' ? PRAGUE_MESH.title : mesh.status === 'loading' ? 'Loading 3D mesh…' : '3D mesh unavailable';
-      m.textContent = base + (custom.length ? ` · +${custom.length} layer${custom.length > 1 ? 's' : ''}` : '');
-      m.title = m.textContent;
-    }
-    function renderLayerList() {
-      const sw = (key, on) => `<label class="switch" title="Show or hide"><input type="checkbox" data-vis="${key}" ${on ? 'checked' : ''}></label>`;
-      let meshRight;
-      if (mesh.status === 'ok') meshRight = sw('mesh', mesh.layer.visible);
-      else if (mesh.status === 'loading') meshRight = '<span class="lstate">Loading…</span>';
-      else meshRight = '<span class="lstate is-bad">Failed</span><button class="btn btn-ghost" type="button" data-retry>Retry</button>';
-      const rows = [`<li><div class="lname"><b>${escapeHtml(PRAGUE_MESH.title)}</b><span>Integrated mesh · built in</span></div>${meshRight}</li>`];
-      custom.forEach((c, i) => {
-        const sub = c.problem
-          ? `<span class="lproblem" title="${escapeHtml(c.problem)}">${escapeHtml(c.problem)}</span>`
-          : `<span title="${escapeHtml(c.src)}">${escapeHtml(kindOf(c.layer))} · ${escapeHtml(c.src)}</span>`;
-        rows.push(`<li${c.problem ? ' class="has-problem"' : ''}><div class="lname">
-          <input class="lname-input" id="layerName${i}" data-rename="${i}" value="${escapeHtml(c.title)}" aria-label="Layer name" title="Click to rename" spellcheck="false">
-          ${sub}</div>
-          ${sw(i, c.layer.visible)}<button class="icon-btn danger" type="button" data-remove="${i}" title="Remove layer">${ICONS.del}</button></li>`);
-      });
-      $('#layerList').innerHTML = rows.join('');
-    }
-    $('#layerList').addEventListener('change', (e) => {
-      const k = e.target.dataset.vis;
-      if (k != null) {
-        const layer = k === 'mesh' ? mesh.layer : custom[+k].layer;
-        if (layer) layer.visible = e.target.checked;
-        return;
-      }
-      const r = e.target.dataset.rename;
-      if (r != null) {
-        const c = custom[+r], name = e.target.value.trim();
-        if (!name) { e.target.value = c.title; return; }
-        c.title = name; c.layer.title = name;
-        toast(`Renamed to ${name}`);
-      }
-    });
-    $('#layerList').addEventListener('keydown', (e) => {
-      if (e.target.dataset.rename != null && e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-    });
-    $('#layerList').addEventListener('click', (e) => {
-      if (e.target.closest('[data-retry]')) { loadMesh(); return; }
-      const rm = e.target.closest('[data-remove]'); if (!rm) return;
-      const [c] = custom.splice(+rm.dataset.remove, 1);
-      if (c.layer.type === 'elevation') map.ground.layers.remove(c.layer); else map.remove(c.layer);
-      renderLayerList(); renderLayerMeta();
-    });
-
-    async function loadMesh() {
-      mesh.status = 'loading'; renderLayerList(); renderLayerMeta();
-      showBanner('');
-      try {
-        const layer = await Layer.fromArcGISServerUrl({ url: PRAGUE_MESH.url });
-        layer.title = PRAGUE_MESH.title;
-        map.add(layer, 0);
-        await layer.load();
-        mesh.layer = layer; mesh.status = 'ok';
-      } catch (err) {
-        mesh.status = 'error'; mesh.message = friendlyLayerError(err);
-        showBanner(`<strong>The 3D mesh could not load.</strong><p>${escapeHtml(mesh.message)}</p><div class="row"><button class="btn btn-primary" type="button" data-retry>Try again</button></div>`, true);
-      }
-      renderLayerList(); renderLayerMeta();
-    }
-    $('#sceneBanner').addEventListener('click', (e) => { if (e.target.closest('[data-retry]')) loadMesh(); });
-
-    // build a layer from an item ID, an ArcGIS service URL, an OGC service or a GeoJSON file
-    async function makeLayers(src) {
-      if (/^[0-9a-f]{32}$/i.test(src)) {
-        const item = new PortalItem({ id: src });
-        await item.load();
-        if (item.type === 'Web Scene') {
-          const ws = new WebScene({ portalItem: item });
-          await ws.load();
-          return [...ws.layers.removeAll(), ...(ws.ground ? ws.ground.layers.removeAll() : [])];
-        }
-        return [await Layer.fromPortalItem({ portalItem: item })];
-      }
-      if (!/^https?:\/\//i.test(src)) throw new Error('Enter a URL starting with https:// or a 32-character item ID.');
-      if (/[?&]service=wmts\b|\/wmts\b/i.test(src)) return [new WMTSLayer({ url: src })];
-      if (/[?&]service=wms\b|\/wms\b|wmsserver/i.test(src)) return [new WMSLayer({ url: src.split('?')[0] })];
-      if (/\.geojson(\?|$)|[?&]f=geojson\b/i.test(src)) return [new GeoJSONLayer({ url: src })];
-      return [await Layer.fromArcGISServerUrl({ url: src })];
-    }
-    // Tiled layers are draped as they are cut; a Web Mercator scene can only use
-    // tiles cut in Web Mercator. Report this instead of showing an empty ground.
-    function tilingProblem(l) {
-      const tsr = (l.tileInfo && l.tileInfo.spatialReference)
-        || (l.activeLayer && l.activeLayer.tileMatrixSet && l.activeLayer.tileMatrixSet.tileInfo && l.activeLayer.tileMatrixSet.tileInfo.spatialReference);
-      if (TILED.includes(l.type) && tsr && !tsr.isWebMercator && !(l.type === 'elevation' && tsr.isWGS84)) {
-        return `Not shown: its tiles are cut in EPSG:${tsr.wkid || tsr.latestWkid || '?'}. This 3D scene needs Web Mercator (EPSG:3857) tiles. Add the 3857 version of the service, or its map-image (dynamic) version.`;
-      }
-      return null;
-    }
-    function watchDisplay(c) {
-      c.problem = tilingProblem(c.layer);
-      view.whenLayerView(c.layer).catch((err) => {
-        if (!custom.includes(c)) return;
-        const m = (err && (err.message || err.name)) || 'unknown error';
-        c.problem = c.problem || (/spatial|tiling|reference/i.test(m)
-          ? 'Not shown: its coordinate system or tiling does not match this Web Mercator scene.'
-          : `Not shown: ${m}`);
-        renderLayerList();
-      });
-    }
-    async function addCustom(src, name, quiet = false, names = null) {
-      src = src.trim(); name = (name || '').trim();
-      if (!src) throw new Error('Paste a layer URL or item ID first.');
-      if (custom.some(c => c.src === src) || src === PRAGUE_MESH.url) throw new Error('This layer is already in the scene.');
-      const all = await makeLayers(src);
-      await Promise.all(all.map(l => l.load()));
-      all.forEach((l, i) => {
-        const title = (names && names[i]) || (name ? (all.length > 1 ? `${name}: ${l.title || i + 1}` : name) : (l.title || 'Untitled layer'));
-        l.title = title;
-        if (l.type === 'elevation') map.ground.layers.add(l);
-        else map.add(l, map.layers.indexOf(camLayer));
-        const c = { src, layer: l, title, problem: null };
-        custom.push(c);
-        watchDisplay(c);
-      });
-      renderLayerList(); renderLayerMeta();
-      const bad = all.map(l => custom.find(c => c.layer === l)).filter(c => c.problem);
-      if (bad.length) toast(`${bad[0].title} cannot be shown in this scene. See the Layers list.`, true);
-      else if (!quiet) toast(all.length > 1 ? `Added ${all.length} layers` : `Added ${all[0].title}`);
-    }
-    function friendlyLayerError(err) {
-      const m = (err && (err.message || err.details?.message)) || String(err);
-      if (/aborted|cancel/i.test(m)) return 'Sign-in was cancelled.';
-      if (/not found|404/i.test(m)) return 'Nothing found at that ID or URL.';
-      if (/token|permission|403|401/i.test(m)) return 'You do not have access to this item. Sign in with an account that can see it.';
-      if (/unsupported|not supported/i.test(m)) return 'This kind of layer cannot be shown in a 3D scene.';
-      return m;
-    }
-
-    $('#btnLayer').onclick = () => {
-      $('#layerErr').hidden = true; $('#layerSrc').value = ''; $('#layerName').value = '';
-      renderLayerList(); openModal('#layerModal');
-    };
-    $('#layerForm').onsubmit = async (e) => {
-      e.preventDefault();
-      const btn = $('#btnAddLayer');
-      btn.disabled = true; btn.textContent = 'Adding…';
-      $('#layerErr').hidden = true;
-      try { await addCustom($('#layerSrc').value, $('#layerName').value); $('#layerSrc').value = ''; $('#layerName').value = ''; }
-      catch (err) { const el = $('#layerErr'); el.textContent = friendlyLayerError(err); el.hidden = false; }
-      finally { btn.disabled = false; btn.textContent = 'Add'; }
-    };
-
-    renderLayerMeta();
-    view.when(() => {
-      scene.ready = true;
-      loadMesh();
-    }, (err) => {
-      showBanner(`<strong>The 3D scene could not start.</strong><p>${escapeHtml(err.message || 'Your browser may not support WebGL2.')}</p>`, true);
-    });
-
-    // ---- clicking in the scene
-    view.on('click', async (e) => {
-      if (e.button === 2) return;
-      const expecting = !!pendingFor('scene');
-      if (!expecting) {
-        const m = markerNear(e.x, e.y);
-        if (m) { select(m.id); return; }
-      }
-      let res;
-      try { res = await view.hitTest(e, { exclude: [camLayer] }); }
-      catch { return; }
-      const surf = res.results.find(r => r.mapPoint && !(r.graphic && r.graphic.layer === camLayer));
-      // An integrated mesh is part of the ground surface in a SceneView, so a mesh
-      // click is reported as a ground hit. Only the empty globe (no mesh, no
-      // elevation layer) is rejected; it sits at exactly 0 m.
-      let mp = surf && surf.mapPoint;
-      if (!mp && res.ground && res.ground.mapPoint) {
-        const g = res.ground, z = g.mapPoint.z ?? 0;
-        const onLayer = !!g.layer && (g.layer === mesh.layer || custom.some(c => c.layer === g.layer));
-        if (onLayer || map.ground.layers.length > 0 || Math.abs(z) > 0.5) mp = g.mapPoint;
-      }
-      if (!mp) { toast('That spot is outside the mesh. Click on a building or the street surface.', true); return; }
-      let x = mp.x, y = mp.y;
-      if (!mp.spatialReference.isWebMercator) [x, y] = Solver.lonLatToMerc(mp.longitude, mp.latitude);
-      placeScene(x, y, mp.z ?? 0);
-    });
-
-    // ---- graphics
-    const hex = (c, a = 1) => { const n = parseInt(c.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a]; };
-    // Point markers are drawn on a canvas over the scene instead of as 3D symbols.
-    // 3D symbols disappear whenever the mesh covers their anchor (common in the
-    // nooks of a photogrammetric mesh); the overlay always shows every point and
-    // only dims the ones the mesh hides from the current viewpoint.
-    const mcan = $('#sceneMarkers'), mctx = mcan.getContext('2d');
-    let screenMarks = [];
-    const occluded = new Map();
-    const D2R = Math.PI / 180;
-    function camFrame() {
-      const cam = view.camera; if (!cam) return null;
-      const cp = cam.position;
-      const [cx, cy] = cp.spatialReference.isWebMercator ? [cp.x, cp.y] : Solver.lonLatToMerc(cp.longitude, cp.latitude);
-      const k = Math.cos(cp.latitude * D2R); // Web Mercator to meters
-      const h = cam.heading * D2R, t = cam.tilt * D2R;
-      return { cx, cy, cz: cp.z, k, f: [Math.sin(h) * Math.sin(t), Math.cos(h) * Math.sin(t), -Math.cos(t)] };
-    }
-    function drawSceneMarkers() {
-      const dpr = window.devicePixelRatio || 1, W = view.width, H = view.height;
-      if (!W || !H) return;
-      if (mcan.width !== Math.round(W * dpr) || mcan.height !== Math.round(H * dpr)) { mcan.width = Math.round(W * dpr); mcan.height = Math.round(H * dpr); }
-      mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      mctx.clearRect(0, 0, W, H);
-      screenMarks = [];
-      const F = camFrame(); if (!F) return;
-      const res = residualMap();
-      const pts = state.points.filter(p => p.x != null).sort((a, b) => (a.id === state.selected) - (b.id === state.selected));
-      for (const p of pts) {
-        const d = [(p.x - F.cx) * F.k, (p.y - F.cy) * F.k, p.z - F.cz];
-        if (d[0] * F.f[0] + d[1] * F.f[1] + d[2] * F.f[2] <= 0) continue; // behind the camera
-        const sp = view.toScreen(new Point({ x: p.x, y: p.y, z: p.z, spatialReference: SR }));
-        if (!sp || sp.x < -40 || sp.y < -40 || sp.x > W + 40 || sp.y > H + 40) continue;
-        screenMarks.push({ id: p.id, x: sp.x, y: sp.y, dist: Math.hypot(d[0], d[1], d[2]) });
-        drawMarker(mctx, sp.x, sp.y, p, pointColor(p, res.get(p.id)), {
-          selected: p.id === state.selected, pending: !isComplete(p), occluded: state.dimHidden && !!occluded.get(p.id),
-        });
-      }
-    }
-    function markerNear(x, y) {
-      let best = null, bd = 14;
-      for (const m of screenMarks) { const d = Math.hypot(m.x - x, m.y - y); if (d < bd) { bd = d; best = m; } }
-      return best;
-    }
-    // After the view settles, test which markers the mesh hides. Both the marker
-    // depth and the depth of whatever the ray hits first are computed the same
-    // way from 3D coordinates, so the comparison does not depend on how ArcGIS
-    // reports its own hit distances.
-    let occTimer = null, occRun = 0;
-    function scheduleOcclusion() { clearTimeout(occTimer); if (state.dimHidden) occTimer = setTimeout(checkOcclusion, 180); }
-    const depthOf = (F, mp) => {
-      let x = mp.x, y = mp.y;
-      if (!mp.spatialReference.isWebMercator) [x, y] = Solver.lonLatToMerc(mp.longitude, mp.latitude);
-      return Math.hypot((x - F.cx) * F.k, (y - F.cy) * F.k, (mp.z ?? 0) - F.cz);
-    };
-    async function firstHitDepth(F, x, y) {
-      const r = await view.hitTest({ x, y }, { exclude: [camLayer] });
-      let best = Infinity;
-      for (const h of r.results) if (h.mapPoint) best = Math.min(best, depthOf(F, h.mapPoint));
-      if (r.ground && r.ground.mapPoint) best = Math.min(best, depthOf(F, r.ground.mapPoint));
-      return best;
-    }
-    async function checkOcclusion() {
-      if (!view.stationary || !state.dimHidden) return;
-      const run = ++occRun;
-      const F = camFrame(); if (!F) return;
-      const marks = screenMarks.slice();
-      const next = new Map();
-      const diag = Math.hypot(view.width, view.height);
-      const halfFov = (view.camera.fov || 55) * D2R / 2;
-      for (const m of marks) {
-        // metres covered by one pixel at the marker's depth
-        const px = 2 * m.dist * Math.tan(halfFov) / diag;
-        const tol = Math.max(0.75, 4 * px, 0.005 * m.dist);
-        let visible = false;
-        // the centre pixel first, then a small ring: corners and edges are visible
-        // if any nearby ray reaches the point
-        for (const [dx, dy] of [[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3]]) {
-          let d;
-          try { d = await firstHitDepth(F, m.x + dx, m.y + dy); } catch { d = Infinity; }
-          if (run !== occRun || !view.stationary) return; // the view moved; a newer check follows
-          if (d >= m.dist - tol) { visible = true; break; }
-        }
-        next.set(m.id, !visible);
-      }
-      occluded.clear(); next.forEach((v, k) => occluded.set(k, v));
-      drawSceneMarkers();
-    }
-    reactiveUtils.watch(() => view.camera, drawSceneMarkers);
-    reactiveUtils.watch(() => [view.width, view.height], drawSceneMarkers);
-    reactiveUtils.watch(() => view.stationary, (st) => {
-      if (st) scheduleOcclusion();
-      else { occRun++; if (occluded.size) { occluded.clear(); drawSceneMarkers(); } }
-    });
-    scene.syncGraphics = () => { drawSceneMarkers(); scheduleOcclusion(); };
-    $('#optDim').onchange = (e) => {
-      state.dimHidden = e.target.checked;
-      occluded.clear(); drawSceneMarkers(); scheduleOcclusion();
-    };
-    scene.syncCamera = () => {
-      camLayer.removeAll();
-      if (!solved()) return;
-      const { apex, corners } = state.sol.frustum;
-      const [a, b, c, d] = corners;
-      camLayer.add(new Graphic({
-        geometry: new Polyline({ paths: [[apex, a], [apex, b], [apex, c], [apex, d], [a, b, c, d, a]], spatialReference: SR, hasZ: true }),
-        symbol: { type: 'line-3d', symbolLayers: [{ type: 'line', size: 1.6, material: { color: hex(COLORS.fixer, 0.95) } }] },
-      }));
-      // top edge marker so "up" in the photo is visible in 3D
-      camLayer.add(new Graphic({
-        geometry: new Polyline({ paths: [[a, b]], spatialReference: SR, hasZ: true }),
-        symbol: { type: 'line-3d', symbolLayers: [{ type: 'line', size: 3.5, material: { color: hex(COLORS.fixer) } }] },
-      }));
-      camLayer.add(new Graphic({
-        geometry: new Point({ x: apex[0], y: apex[1], z: apex[2], spatialReference: SR }),
-        symbol: {
-          type: 'point-3d',
-          symbolLayers: [
-            { type: 'icon', size: 15, resource: { primitive: 'circle' }, material: { color: hex(COLORS.fixer) }, outline: { color: hex(COLORS.ink), size: 1.5 } },
-          ],
-        },
-      }));
-    };
-    scene.goToPoints = (pts) => {
-      const geoms = pts.filter(p => p.x != null).map(p => new Point({ x: p.x, y: p.y, z: p.z, spatialReference: SR }));
-      if (geoms.length) view.when(() => view.goTo(geoms, { duration: 1000 })).catch(() => {});
-    };
-    // fly to about 60 m from the point, keeping the current viewing direction
-    scene.goToPoint = (p) => {
-      const cam = view.camera;
-      const heading = cam.heading;
-      const tilt = Math.min(78, Math.max(45, cam.tilt));
-      const D = 60, h = heading * Math.PI / 180, t = tilt * Math.PI / 180;
-      const [, lat] = Solver.mercToLonLat(p.x, p.y);
-      const k = Math.cos(lat * Math.PI / 180); // meters to Web Mercator units: divide by k
-      const f = [Math.sin(h) * Math.sin(t), Math.cos(h) * Math.sin(t), -Math.cos(t)];
-      const position = new Point({ x: p.x - f[0] * D / k, y: p.y - f[1] * D / k, z: p.z - f[2] * D, spatialReference: SR });
-      view.goTo(new Camera({ position, heading, tilt, fov: cam.fov }), { duration: 900 }).catch(() => {});
-    };
-
-    // ---- view from the solved camera
-    const savedConstraints = {};
-    function overlayGeometry() {
-      const c = state.sol.camera;
-      const Vw = view.width, Vh = view.height;
-      const s = Math.min(Vw / state.W, Vh / state.H);
-      const fovDiag = 2 * Math.atan(Math.hypot(Vw, Vh) / 2 / (c.f * s)) * R2D; // ArcGIS camera fov is diagonal
-      return { s, Vw, Vh, fov: Math.min(170, Math.max(1, fovDiag)), clamped: fovDiag > 170 || fovDiag < 1 };
-    }
-    function layoutOverlay() {
-      if (!state.cameraMode || !solved()) return;
-      const c = state.sol.camera;
-      const { s, Vw, Vh } = overlayGeometry();
-      const img = $('#overlayImg');
-      img.style.width = state.W + 'px';
-      img.style.height = state.H + 'px';
-      img.style.left = (Vw / 2) + 'px';
-      img.style.top = (Vh / 2) + 'px';
-      // view center = principal point; the scene camera has no roll, so the photo is rotated instead
-      img.style.transform = `rotate(${c.roll}deg) scale(${s}) translate(${-c.cx}px, ${-c.cy}px)`;
-    }
-    // Every constraint change is guarded: if a property is missing in this
-    // ArcGIS version, the camera must still move.
-    const setConstraint = (fn) => { try { fn(); } catch (err) { console.warn('Constraint not available', err); } };
-    let cameraBefore = null;
-
-    // Clip the mesh in a circle around the solved camera, so a camera standing
-    // in a window or a nook is not blocked by the mesh around it.
-    let clipRadius = 0;
-    $('#clipRadius').value = clipRadius;
-    const clipLabel = () => { $('#clipValue').textContent = clipRadius ? `${clipRadius} m` : 'off'; paintRange($('#clipRadius')); };
-    clipLabel();
-    function circlePolygon(c, r) {
-      const R = r / Math.cos(c.lat * Math.PI / 180); // meters to Web Mercator units
-      const ring = [];
-      for (let i = 0; i <= 64; i++) { const a = -i / 64 * 2 * Math.PI; ring.push([c.x + R * Math.cos(a), c.y + R * Math.sin(a)]); }
-      return new Polygon({ rings: [ring], spatialReference: SR });
-    }
-    function applyClip() {
-      const on = state.cameraMode && clipRadius > 0 && solved();
-      const poly = on ? circlePolygon(state.sol.camera, clipRadius) : null;
-      for (const l of [mesh.layer, ...custom.map(c => c.layer)]) {
-        if (!l) continue;
-        try {
-          if (/integrated-mesh/.test(l.type) && 'modifications' in l) {
-            l.modifications = on ? new SceneModifications([new SceneModification({ geometry: poly, type: 'clip' })]) : null;
-          } else if (l.type === 'scene' && 'filter' in l) {
-            l.filter = on ? { geometries: [poly], spatialRelationship: 'disjoint' } : null;
-          }
-        } catch (err) { console.warn('Could not clip', l.title, err); }
-      }
-    }
-    $('#clipRadius').addEventListener('input', (e) => {
-      clipRadius = +e.target.value; clipLabel(); applyClip();
-    });
-    scene.applyCameraView = (animate) => {
-      if (!solved()) return;
-      const c = state.sol.camera;
-      if (!cameraBefore) {
-        cameraBefore = view.camera.clone();
-        setConstraint(() => { savedConstraints.collision = view.constraints.collision.enabled; });
-        setConstraint(() => { savedConstraints.tiltMode = view.constraints.tilt.mode; savedConstraints.tiltMax = view.constraints.tilt.max; });
-        setConstraint(() => { savedConstraints.nav = (map.ground.navigationConstraint && map.ground.navigationConstraint.type) || 'stay-above'; });
-      }
-      // let the camera sit exactly where it was solved, even below the mesh or ground surface
-      setConstraint(() => { map.ground.navigationConstraint = { type: 'none' }; });
-      applyClip();
-      setConstraint(() => { view.constraints.collision.enabled = false; });
-      setConstraint(() => { view.constraints.tilt.mode = 'manual'; view.constraints.tilt.max = 179.9; });
-      const { fov, clamped } = overlayGeometry();
-      const cam = new Camera({ position: new Point({ x: c.x, y: c.y, z: c.z, spatialReference: SR }), heading: c.heading, tilt: c.tilt, fov });
-      // the photo appears only once the scene looks through the solved camera
-      $('#overlayWrap').hidden = true;
-      const arrived = () => {
-        if (!state.cameraMode) return;
-        const p = view.camera.position;
-        const off = Math.hypot((p.x - c.x) * Math.cos(c.lat * Math.PI / 180), (p.y - c.y) * Math.cos(c.lat * Math.PI / 180), p.z - c.z);
-        layoutOverlay();
-        $('#overlayWrap').hidden = false;
-        if (off > 1) toast(`The scene kept the camera ${off.toFixed(1)} m away from the solved position, so the overlay may be offset. Try Clip mesh.`, true);
-        else if (Math.abs(view.camera.tilt - c.tilt) > 0.5) toast('The scene limited the camera tilt, so the overlay may be offset', true);
-        else if (clamped) toast('Field of view is outside the scene\'s range, so the overlay may be offset', true);
-      };
-      const jump = () => {
-        try { view.camera = cam; arrived(); }
-        catch (err) { console.error(err); toast(`Could not move the scene camera: ${err.message || err}`, true); exitCameraMode(); }
-      };
-      view.goTo(cam, { animate, duration: 1100 }).then(arrived).catch((err) => {
-        if (!state.cameraMode) return;
-        if (err && err.name === 'AbortError') return; // replaced by a newer move
-        console.warn('goTo failed, setting the camera directly', err);
-        jump();
-      });
-    };
-    scene.releaseCameraView = () => {
-      setConstraint(() => { if (savedConstraints.collision != null) view.constraints.collision.enabled = savedConstraints.collision; });
-      setConstraint(() => {
-        if (savedConstraints.tiltMode) {
-          view.constraints.tilt.mode = savedConstraints.tiltMode;
-          if (savedConstraints.tiltMode === 'manual') view.constraints.tilt.max = savedConstraints.tiltMax;
-        }
-      });
-      setConstraint(() => { if (savedConstraints.nav) map.ground.navigationConstraint = { type: savedConstraints.nav }; delete savedConstraints.nav; });
-      applyClip();
-      // return to where the user was before
-      if (cameraBefore) view.goTo(cameraBefore, { duration: 800 }).catch(() => { view.camera = cameraBefore; });
-      cameraBefore = null;
-    };
-    // keep the scene locked while the photo is overlaid
-    const lock = (e) => { if (state.cameraMode) e.stopPropagation(); };
-    ['drag', 'mouse-wheel', 'double-click', 'key-down', 'hold'].forEach(t => view.on(t, lock));
-    reactiveUtils.watch(() => [view.width, view.height], () => { if (state.cameraMode) scene.applyCameraView(false); });
-
-    scene.syncGraphics();
-    scene.syncCamera();
-  }, (err) => {
-    showBanner(`<strong>The 3D scene could not load.</strong><p>${escapeHtml(err.message || String(err))}</p>`, true);
+// ArcGIS is several megabytes, so it loads only once the screen is large
+// enough to use the app (phones never load it; a small window loads it when enlarged).
+function loadArcGIS() {
+  const css = document.createElement('link');
+  css.rel = 'stylesheet'; css.href = ARCGIS_CSS;
+  document.head.appendChild(css);
+  const s = document.createElement('script');
+  s.src = ARCGIS_JS; s.async = true;
+  s.onload = () => {
+    if (typeof window.require !== 'function') { sceneFailed('The ArcGIS library did not start. Reload the page.'); return; }
+    window.require(['esri/Map', 'esri/WebScene', 'esri/views/SceneView', 'esri/layers/Layer', 'esri/layers/GraphicsLayer',
+      'esri/Graphic', 'esri/geometry/Point', 'esri/geometry/Polyline', 'esri/geometry/Polygon', 'esri/Camera', 'esri/Ground',
+      'esri/portal/PortalItem', 'esri/core/reactiveUtils', 'esri/layers/WMSLayer', 'esri/layers/WMTSLayer', 'esri/layers/GeoJSONLayer',
+      'esri/layers/support/SceneModification', 'esri/layers/support/SceneModifications'],
+    (...mods) => {
+      try { initScene(...mods); } catch (err) { console.error(err); sceneFailed(err.message || String(err)); }
+    }, (err) => sceneFailed(err.message || String(err)));
+  };
+  s.onerror = () => sceneFailed('The ArcGIS library did not arrive. Check the internet connection and reload. The photo side still works.');
+  document.head.appendChild(s);
+}
+{
+  const small = matchMedia(SMALL_SCREEN);
+  if (!small.matches) loadArcGIS();
+  else small.addEventListener('change', function onBig() {
+    if (small.matches) return;
+    small.removeEventListener('change', onBig);
+    loadArcGIS();
   });
 }
-function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-// first paint: put every control at its default. Browsers restore form
-// controls on reload, which would disagree with the app's actual state.
+function initScene(EsriMap, WebScene, SceneView, Layer, GraphicsLayer, Graphic, Point, Polyline, Polygon, Camera, Ground,
+  PortalItem, reactiveUtils, WMSLayer, WMTSLayer, GeoJSONLayer, SceneModification, SceneModifications) {
+  const SR = { wkid: 3857 };
+  const PRAGUE_MESH = {
+    url: 'https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/praha2023_merged_WM/SceneServer',
+    title: '3D Mesh Model (Prague)',
+  };
+  const pt = (x, y, z) => new Point({ x, y, z, spatialReference: SR });
+  const mercXY = (p) => (p.spatialReference && p.spatialReference.isWebMercator) ? [p.x, p.y] : Solver.lonLatToMerc(p.longitude, p.latitude);
+  // a property may be missing in another ArcGIS version; the app must keep working
+  const guard = (fn) => { try { fn(); } catch (err) { console.warn('ArcGIS setting not available', err); } };
+  const rgba = (hex, a = 1) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a]; };
+
+  const map = new EsriMap({ ground: new Ground({ surfaceColor: [36, 34, 31] }) });
+  const camLayer = new GraphicsLayer({ title: 'Solved camera', elevationInfo: { mode: 'absolute-height' }, listMode: 'hide' });
+  map.add(camLayer);
+  const view = new SceneView({
+    container: 'viewDiv',
+    map,
+    spatialReference: SR,
+    viewingMode: 'global',
+    camera: { position: { longitude: 14.405, latitude: 50.072, z: 1100 }, heading: 34, tilt: 66 }, // north-east across the river to the Old Town
+    qualityProfile: 'high',
+    popupEnabled: false,
+    environment: { starsEnabled: false, atmosphereEnabled: true },
+    // no pan/rotate toggle: left-drag pans, right-drag orbits, middle-drag zooms; Look around is the only mode switch
+    ui: { components: ['zoom', 'compass'] },
+  });
+  view.ui.move(['zoom', 'compass'], 'top-right');
+
+  // ---- extra navigation buttons: look straight down, look around (on/off)
+  // Built like ArcGIS 4.33 builds its own (a neutral calcite-button with the
+  // esri-widget--button class inside an esri-widget), so they look the same.
+  // If an icon or the component is unavailable, a plain button with our own
+  // drawing takes its place, so a button never ends up blank.
+  function navButton({ id, label, tip, tipTitle, icons, svg, onClick }) {
+    const box = document.createElement('div');
+    box.className = 'esri-widget sp-nav';
+    box.id = id;
+    const btn = document.createElement('calcite-button');
+    btn.className = 'esri-widget--button';
+    btn.setAttribute('kind', 'neutral');
+    btn.setAttribute('label', label);
+    btn.setAttribute('icon-start', icons[0]);
+    Object.assign(btn.dataset, { tip }, tipTitle ? { tipTitle } : {});
+    box.appendChild(btn);
+    box.addEventListener('click', onClick);
+    const fallback = () => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'sp-nav-fallback';
+      b.setAttribute('aria-label', label);
+      Object.assign(b.dataset, btn.dataset);
+      b.innerHTML = svg;
+      btn.replaceWith(b);
+    };
+    (async () => {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const defined = await Promise.race([customElements.whenDefined('calcite-button').then(() => true), wait(5000).then(() => false)]);
+      if (!defined) { fallback(); return; }
+      // 'ok' once the icon has drawn, 'unknown' if its inner structure cannot be read
+      const iconState = () => {
+        const ic = btn.shadowRoot && btn.shadowRoot.querySelector('calcite-icon');
+        if (!ic || !ic.shadowRoot) return 'unknown';
+        return ic.shadowRoot.querySelector('svg > *') ? 'ok' : 'empty';
+      };
+      for (const name of icons) {
+        btn.setAttribute('icon-start', name);
+        for (let i = 0; i < 20; i++) {
+          await wait(150);
+          const st = iconState();
+          if (st === 'ok') return;
+          if (st === 'unknown' && i > 5) return; // cannot check; trust the component
+        }
+      }
+      fallback();
+    })();
+    return box;
+  }
+  const nadirBox = navButton({
+    id: 'btnNadir', label: 'Look straight down', tip: 'Look straight down at the spot in the middle of the view',
+    icons: ['arrow-down'],
+    svg: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v10M3.5 8 8 12.5 12.5 8"/></svg>',
+    onClick: lookDown,
+  });
+  const lookBox = navButton({
+    id: 'btnLook', label: 'Look around', tipTitle: 'Look around',
+    tip: 'Dragging turns the camera in place, as if looking around from where it stands. Click again for normal navigation. Holding B while dragging does the same at any time.',
+    icons: ['360-view', 'view-visible'],
+    svg: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.3 8s1.4-2.5 3.7-2.5S11.7 8 11.7 8 10.3 10.5 8 10.5 4.3 8 4.3 8z"/><circle cx="8" cy="8" r="1"/><path d="M2.6 5.8 1.2 8l1.4 2.2M13.4 5.8 14.8 8l-1.4 2.2"/></svg>',
+    onClick: () => { if (state.cameraMode) exitCameraMode(true); setLookMode(!lookMode); },
+  });
+  view.ui.add([nadirBox, lookBox], 'top-right');
+
+  // Hover above the spot in the middle of the view at the same distance, looking
+  // straight down. When looking at the sky, look straight down from where the camera is.
+  function lookDown() {
+    if (state.cameraMode) exitCameraMode(true);
+    const cam = view.camera, cp = cam.position;
+    const [cx, cy] = mercXY(cp), k = mercScale(cp.latitude);
+    let target = [cx, cy, cp.z];
+    const c = view.center;
+    if (c && cam.tilt < 88) {
+      const [mx, my] = mercXY(c), cz = c.z ?? 0;
+      const d = Math.hypot((mx - cx) * k, (my - cy) * k, cz - cp.z);
+      if (d < 20000) target = [mx, my, cz + d];
+    }
+    view.goTo(new Camera({ position: pt(...target), heading: cam.heading, tilt: 0, fov: cam.fov }), { duration: 700 }).catch(() => {});
+  }
+
+  // ArcGIS has no drag mode for looking around, so the drag turns the camera
+  // here: dragging across the whole view turns it by one field of view.
+  let lookMode = false, lookStart = null;
+  const lookSaved = {};
+  function setLookMode(on) {
+    if (on === lookMode) return;
+    lookMode = on; lookStart = null;
+    lookBox.classList.toggle('is-active', on);
+    $('#viewDiv').classList.toggle('is-looking', on);
+    guard(() => {
+      if (on) {
+        lookSaved.mode = view.constraints.tilt.mode; lookSaved.max = view.constraints.tilt.max;
+        view.constraints.tilt.mode = 'manual'; view.constraints.tilt.max = 179; // allow looking above the horizon
+      } else if (lookSaved.mode) {
+        view.constraints.tilt.mode = lookSaved.mode;
+        if (lookSaved.mode === 'manual') view.constraints.tilt.max = lookSaved.max;
+      }
+    });
+  }
+  scene.stopLook = () => { const was = lookMode; setLookMode(false); return was; };
+  view.on('drag', (e) => {
+    if (!lookMode || state.cameraMode || e.button !== 0) return;
+    e.stopPropagation();
+    if (e.action === 'start') { lookStart = { x: e.x, y: e.y, cam: view.camera.clone() }; return; }
+    if (!lookStart) return;
+    const c0 = lookStart.cam;
+    const degPerPx = (c0.fov || 55) / Math.hypot(view.width, view.height); // ArcGIS fov is diagonal
+    const cam = c0.clone();
+    cam.heading = c0.heading - (e.x - lookStart.x) * degPerPx;
+    cam.tilt = clamp(c0.tilt + (e.y - lookStart.y) * degPerPx, 1, 179);
+    view.camera = cam;
+    if (e.action === 'end') lookStart = null;
+  });
+
+  // ---- layers: the built-in Prague mesh plus any the user adds
+  const mesh = { layer: null, status: 'loading', message: '' };
+  const custom = []; // { src, layer, title, problem }
+  const KIND = {
+    'integrated-mesh': 'Integrated mesh', 'integrated-mesh-3dtiles': '3D Tiles mesh', scene: '3D objects', 'building-scene': 'Building scene', 'point-cloud': 'Point cloud',
+    feature: 'Features', 'map-image': 'Map image', tile: 'Tiles', 'vector-tile': 'Vector tiles', imagery: 'Imagery', 'imagery-tile': 'Imagery tiles',
+    elevation: 'Elevation (ground)', wms: 'WMS', wmts: 'WMTS', geojson: 'GeoJSON', 'web-tile': 'Web tiles', voxel: 'Voxel', group: 'Group',
+  };
+  const kindOf = (l) => KIND[l.type] || l.type || 'Layer';
+  const TILED = ['tile', 'vector-tile', 'imagery-tile', 'elevation', 'web-tile', 'wmts'];
+
+  function renderLayerMeta() {
+    const m = $('#layerMeta');
+    const base = mesh.status === 'ok' ? PRAGUE_MESH.title : mesh.status === 'loading' ? 'Loading 3D mesh…' : '3D mesh unavailable';
+    m.textContent = base + (custom.length ? ` · +${plural(custom.length, 'layer')}` : '');
+    m.dataset.tip = m.textContent;
+  }
+  function renderLayerList() {
+    const sw = (key, on) => `<label class="switch" data-tip="Show or hide"><input type="checkbox" data-vis="${key}" aria-label="Show layer" ${on ? 'checked' : ''}></label>`;
+    const meshRight = mesh.status === 'ok' ? sw('mesh', mesh.layer.visible)
+      : mesh.status === 'loading' ? '<span class="lstate">Loading…</span>'
+      : '<span class="lstate is-bad">Failed</span><button class="btn btn-ghost" type="button" data-retry>Retry</button>';
+    const rows = [`<li><div class="lname"><b>${escapeHtml(PRAGUE_MESH.title)}</b><span>Integrated mesh · built in</span></div>${meshRight}</li>`];
+    custom.forEach((c, i) => {
+      const sub = c.problem
+        ? `<span class="lproblem">${escapeHtml(c.problem)}</span>`
+        : `<span data-tip="${escapeHtml(c.src)}">${escapeHtml(kindOf(c.layer))} · ${escapeHtml(c.src)}</span>`;
+      rows.push(`<li${c.problem ? ' class="has-problem"' : ''}><div class="lname">
+        <input class="lname-input" id="layerName${i}" data-rename="${i}" value="${escapeHtml(c.title)}" aria-label="Layer name" data-tip="Click to rename" spellcheck="false">
+        ${sub}</div>
+        ${sw(i, c.layer.visible)}<button class="icon-btn danger" type="button" data-remove="${i}" aria-label="Remove layer" data-tip="Remove layer">${ICONS.del}</button></li>`);
+    });
+    $('#layerList').innerHTML = rows.join('');
+  }
+  $('#layerList').addEventListener('change', (e) => {
+    const { vis, rename } = e.target.dataset;
+    if (vis != null) {
+      const layer = vis === 'mesh' ? mesh.layer : custom[+vis].layer;
+      if (layer) layer.visible = e.target.checked;
+    } else if (rename != null) {
+      const c = custom[+rename], name = e.target.value.trim();
+      if (!name) { e.target.value = c.title; return; }
+      c.title = c.layer.title = name;
+      toast(`Renamed to ${name}`);
+    }
+  });
+  $('#layerList').addEventListener('keydown', (e) => {
+    if (e.target.dataset.rename != null && e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+  });
+  $('#layerList').addEventListener('click', (e) => {
+    if (e.target.closest('[data-retry]')) { loadMesh(); return; }
+    const rm = e.target.closest('[data-remove]'); if (!rm) return;
+    const [c] = custom.splice(+rm.dataset.remove, 1);
+    if (c.layer.type === 'elevation') map.ground.layers.remove(c.layer); else map.remove(c.layer);
+    renderLayerList(); renderLayerMeta();
+  });
+
+  async function loadMesh() {
+    if (mesh.status === 'ok') return;
+    mesh.status = 'loading'; renderLayerList(); renderLayerMeta();
+    showBanner('');
+    let layer = null;
+    try {
+      layer = await Layer.fromArcGISServerUrl({ url: PRAGUE_MESH.url });
+      layer.title = PRAGUE_MESH.title;
+      map.add(layer, 0);
+      await layer.load();
+      mesh.layer = layer; mesh.status = 'ok';
+    } catch (err) {
+      if (layer) map.remove(layer); // do not leave a broken layer behind
+      mesh.status = 'error'; mesh.message = friendlyLayerError(err);
+      showBanner(`<strong>The 3D mesh could not load.</strong><p>${escapeHtml(mesh.message)}</p><div class="row"><button class="btn btn-primary" type="button" data-retry>Try again</button></div>`, true);
+    }
+    renderLayerList(); renderLayerMeta();
+  }
+  $('#sceneBanner').addEventListener('click', (e) => { if (e.target.closest('[data-retry]')) loadMesh(); });
+
+  // build layers from an item ID, an ArcGIS service URL, an OGC service or a GeoJSON file
+  async function makeLayers(src) {
+    if (/^[0-9a-f]{32}$/i.test(src)) {
+      const item = new PortalItem({ id: src });
+      await item.load();
+      if (item.type === 'Web Scene') {
+        const ws = new WebScene({ portalItem: item });
+        await ws.load();
+        return [...ws.layers.removeAll(), ...(ws.ground ? ws.ground.layers.removeAll() : [])];
+      }
+      return [await Layer.fromPortalItem({ portalItem: item })];
+    }
+    if (!/^https?:\/\//i.test(src)) throw new Error('Enter a URL starting with https:// or a 32-character item ID.');
+    if (/[?&]service=wmts\b|\/wmts\b/i.test(src)) return [new WMTSLayer({ url: src })];
+    if (/[?&]service=wms\b|\/wms\b|wmsserver/i.test(src)) return [new WMSLayer({ url: src.split('?')[0] })];
+    if (/\.geojson(\?|$)|[?&]f=geojson\b/i.test(src)) return [new GeoJSONLayer({ url: src })];
+    return [await Layer.fromArcGISServerUrl({ url: src })];
+  }
+  // A 3D scene drapes tiles exactly as they are cut, so a Web Mercator scene
+  // can only use tiles cut in Web Mercator. Say so instead of showing nothing.
+  function tilingProblem(l) {
+    const ti = l.tileInfo || (l.activeLayer && l.activeLayer.tileMatrixSet && l.activeLayer.tileMatrixSet.tileInfo);
+    const tsr = ti && ti.spatialReference;
+    if (TILED.includes(l.type) && tsr && !tsr.isWebMercator && !(l.type === 'elevation' && tsr.isWGS84)) {
+      return `Not shown: its tiles are cut in EPSG:${tsr.wkid || tsr.latestWkid || '?'}. This 3D scene needs Web Mercator (EPSG:3857) tiles. Add the 3857 version of the service, or its map-image (dynamic) version.`;
+    }
+    return null;
+  }
+  function watchDisplay(c) {
+    c.problem = tilingProblem(c.layer);
+    view.whenLayerView(c.layer).catch((err) => {
+      if (!custom.includes(c)) return;
+      const m = (err && (err.message || err.name)) || 'unknown error';
+      c.problem = c.problem || (/spatial|tiling|reference/i.test(m)
+        ? 'Not shown: its coordinate system or tiling does not match this Web Mercator scene.'
+        : `Not shown: ${m}`);
+      renderLayerList();
+    });
+  }
+  async function addCustom(src, name) {
+    src = src.trim(); name = name.trim();
+    if (!src) throw new Error('Paste a layer URL or item ID first.');
+    if (src === PRAGUE_MESH.url || custom.some(c => c.src === src)) throw new Error('This layer is already in the scene.');
+    const layers = await makeLayers(src);
+    await Promise.all(layers.map(l => l.load()));
+    const added = layers.map((l, i) => {
+      l.title = name ? (layers.length > 1 ? `${name}: ${l.title || i + 1}` : name) : (l.title || 'Untitled layer');
+      if (l.type === 'elevation') map.ground.layers.add(l);
+      else map.add(l, map.layers.indexOf(camLayer)); // below the camera graphics
+      const c = { src, layer: l, title: l.title, problem: null };
+      custom.push(c);
+      watchDisplay(c);
+      return c;
+    });
+    renderLayerList(); renderLayerMeta();
+    const bad = added.find(c => c.problem);
+    if (bad) toast(`${bad.title} cannot be shown in this scene. See the Layers list.`, true);
+    else toast(added.length > 1 ? `Added ${added.length} layers` : `Added ${added[0].title}`);
+  }
+  function friendlyLayerError(err) {
+    const m = (err && (err.message || (err.details && err.details.message))) || String(err);
+    if (/aborted|cancel/i.test(m)) return 'Sign-in was cancelled.';
+    if (/not found|404/i.test(m)) return 'Nothing found at that ID or URL.';
+    if (/token|permission|403|401/i.test(m)) return 'You do not have access to this item. Sign in with an account that can see it.';
+    if (/unsupported|not supported/i.test(m)) return 'This kind of layer cannot be shown in a 3D scene.';
+    return m;
+  }
+  $('#btnLayer').onclick = () => {
+    $('#layerErr').hidden = true; $('#layerSrc').value = ''; $('#layerName').value = '';
+    renderLayerList(); openModal('#layerModal');
+  };
+  $('#layerForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $('#btnAddLayer');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    $('#layerErr').hidden = true;
+    try { await addCustom($('#layerSrc').value, $('#layerName').value); $('#layerSrc').value = ''; $('#layerName').value = ''; }
+    catch (err) { const el = $('#layerErr'); el.textContent = friendlyLayerError(err); el.hidden = false; }
+    finally { btn.disabled = false; btn.textContent = 'Add'; }
+  };
+
+  renderLayerMeta();
+  view.when(() => {
+    scene.ready = true;
+    loadMesh();
+  }, (err) => sceneFailed((err && err.message) || 'Your browser may not support WebGL2.'));
+
+  // ---- picking points on the mesh
+  view.on('click', async (e) => {
+    if (e.button === 2 || state.cameraMode) return; // no picking through the photo overlay
+    if (!pendingFor('scene')) {
+      const m = markerNear(e.x, e.y);
+      if (m) { select(m.id); return; }
+    }
+    let res;
+    try { res = await view.hitTest(e, { exclude: [camLayer] }); } catch { return; }
+    const surf = res.results.find(r => r.mapPoint);
+    // An integrated mesh is part of the ground surface in a SceneView, so a mesh
+    // click comes back as a ground hit. Only the empty globe (no mesh, no
+    // elevation layer) is refused; it sits at exactly 0 m.
+    let mp = surf && surf.mapPoint;
+    if (!mp && res.ground && res.ground.mapPoint) {
+      const g = res.ground;
+      const onLayer = !!g.layer && (g.layer === mesh.layer || custom.some(c => c.layer === g.layer));
+      if (onLayer || map.ground.layers.length > 0 || Math.abs(g.mapPoint.z ?? 0) > 0.5) mp = g.mapPoint;
+    }
+    if (!mp) { toast('That spot is outside the mesh. Click on a building or the street surface.', true); return; }
+    const [x, y] = mercXY(mp);
+    placeScene(x, y, mp.z ?? 0);
+  });
+
+  // ---- point markers over the scene
+  // Markers are drawn on a canvas over the scene instead of as 3D symbols.
+  // 3D symbols vanish whenever the mesh covers their anchor (common in the nooks
+  // of a photogrammetric mesh); the overlay always shows every point and only
+  // dims the ones the mesh hides from the current viewpoint.
+  const mcan = $('#sceneMarkers'), mctx = mcan.getContext('2d');
+  let screenMarks = []; // { id, x, y, dist } from the last draw, for clicks and the hidden-point check
+  const occluded = new Map();
+  // camera position in EPSG:3857 and its viewing direction in meters (east, north, up)
+  function camFrame() {
+    const cam = view.camera; if (!cam) return null;
+    const cp = cam.position, [cx, cy] = mercXY(cp);
+    const h = cam.heading * D2R, t = cam.tilt * D2R;
+    return { cx, cy, cz: cp.z, k: mercScale(cp.latitude), f: [Math.sin(h) * Math.sin(t), Math.cos(h) * Math.sin(t), -Math.cos(t)] };
+  }
+  const distTo = (F, x, y, z) => Math.hypot((x - F.cx) * F.k, (y - F.cy) * F.k, z - F.cz);
+  function drawSceneMarkers() {
+    const dpr = window.devicePixelRatio || 1, W = view.width, H = view.height;
+    if (!W || !H) return;
+    if (mcan.width !== Math.round(W * dpr) || mcan.height !== Math.round(H * dpr)) { mcan.width = Math.round(W * dpr); mcan.height = Math.round(H * dpr); }
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mctx.clearRect(0, 0, W, H);
+    screenMarks = [];
+    const F = camFrame(); if (!F) return;
+    const res = residualMap();
+    // the selected marker is drawn last, on top
+    const pts = state.points.filter(p => p.x != null).sort((a, b) => (a.id === state.selected) - (b.id === state.selected));
+    for (const p of pts) {
+      const d = [(p.x - F.cx) * F.k, (p.y - F.cy) * F.k, p.z - F.cz];
+      if (d[0] * F.f[0] + d[1] * F.f[1] + d[2] * F.f[2] <= 0) continue; // behind the camera
+      const sp = view.toScreen(pt(p.x, p.y, p.z));
+      if (!sp || sp.x < -40 || sp.y < -40 || sp.x > W + 40 || sp.y > H + 40) continue;
+      screenMarks.push({ id: p.id, x: sp.x, y: sp.y, dist: Math.hypot(...d) });
+      drawMarker(mctx, sp.x, sp.y, p, pointColor(p, res.get(p.id)), {
+        selected: p.id === state.selected, pending: !isComplete(p), occluded: state.dimHidden && !!occluded.get(p.id),
+      });
+    }
+  }
+  let markerFrame = 0;
+  const requestMarkers = () => { if (!markerFrame) markerFrame = requestAnimationFrame(() => { markerFrame = 0; drawSceneMarkers(); }); };
+  function markerNear(x, y) {
+    let best = null, bd = 14;
+    for (const m of screenMarks) { const d = Math.hypot(m.x - x, m.y - y); if (d < bd) { bd = d; best = m; } }
+    return best;
+  }
+  // Once the view stops moving, test which markers the mesh hides: a marker is
+  // visible when the first surface along its ray is not much nearer than the
+  // point. Both depths are measured the same way, from 3D coordinates.
+  let occTimer = null, occRun = 0;
+  function scheduleOcclusion() { clearTimeout(occTimer); if (state.dimHidden) occTimer = setTimeout(checkOcclusion, 180); }
+  async function reaches(F, m, dx, dy, tol) {
+    try {
+      const r = await view.hitTest({ x: m.x + dx, y: m.y + dy }, { exclude: [camLayer] });
+      let first = Infinity;
+      for (const h of [...r.results, r.ground]) {
+        if (h && h.mapPoint) { const [x, y] = mercXY(h.mapPoint); first = Math.min(first, distTo(F, x, y, h.mapPoint.z ?? 0)); }
+      }
+      return first >= m.dist - tol;
+    } catch { return true; } // when unsure, show the marker at full strength
+  }
+  async function checkOcclusion() {
+    if (!view.stationary || !state.dimHidden || !screenMarks.length) return;
+    const run = ++occRun, F = camFrame(); if (!F) return;
+    const stale = () => run !== occRun || !view.stationary; // the view moved; a newer check follows
+    const pxSize = 2 * Math.tan((view.camera.fov || 55) * D2R / 2) / Math.hypot(view.width, view.height);
+    const tolOf = (m) => Math.max(0.75, 4 * pxSize * m.dist, 0.005 * m.dist); // meters
+    const marks = screenMarks.slice();
+    // the center ray of every marker at once, then a small ring around the ones
+    // that look hidden: corners and edges count as visible if any nearby ray reaches them
+    const center = await Promise.all(marks.map(m => reaches(F, m, 0, 0, tolOf(m))));
+    if (stale()) return;
+    const ring = [[3, 0], [-3, 0], [0, 3], [0, -3]];
+    const hidden = await Promise.all(marks.map(async (m, i) => center[i] ? false
+      : !(await Promise.all(ring.map(([dx, dy]) => reaches(F, m, dx, dy, tolOf(m))))).some(Boolean)));
+    if (stale()) return;
+    occluded.clear();
+    marks.forEach((m, i) => occluded.set(m.id, hidden[i]));
+    requestMarkers();
+  }
+  reactiveUtils.watch(() => view.camera, requestMarkers);
+  reactiveUtils.watch(() => [view.width, view.height], () => {
+    requestMarkers();
+    if (state.cameraMode) scene.applyCameraView(false); // keep the overlay matched to the new size
+  });
+  reactiveUtils.watch(() => view.stationary, (still) => {
+    if (still) { scheduleOcclusion(); return; }
+    occRun++;
+    if (occluded.size) { occluded.clear(); requestMarkers(); }
+  });
+  scene.syncGraphics = () => { requestMarkers(); scheduleOcclusion(); };
+  $('#optDim').onchange = (e) => {
+    state.dimHidden = e.target.checked;
+    occluded.clear(); requestMarkers(); scheduleOcclusion();
+  };
+
+  // ---- the solved camera as a view pyramid; its thick edge is the top of the photo
+  scene.syncCamera = () => {
+    camLayer.removeAll();
+    if (!solved()) return;
+    const { apex, corners: [a, b, c, d] } = state.sol.frustum;
+    const line = (paths, size, alpha = 1) => new Graphic({
+      geometry: new Polyline({ paths, spatialReference: SR, hasZ: true }),
+      symbol: { type: 'line-3d', symbolLayers: [{ type: 'line', size, material: { color: rgba(COLORS.fixer, alpha) } }] },
+    });
+    camLayer.addMany([
+      line([[apex, a], [apex, b], [apex, c], [apex, d], [a, b, c, d, a]], 1.6, 0.95),
+      line([[a, b]], 3.5),
+      new Graphic({
+        geometry: pt(...apex),
+        symbol: { type: 'point-3d', symbolLayers: [{ type: 'icon', size: 15, resource: { primitive: 'circle' }, material: { color: rgba(COLORS.fixer) }, outline: { color: rgba(COLORS.ink), size: 1.5 } }] },
+      }),
+    ]);
+  };
+
+  // ---- moving the scene camera
+  // Frame every point in use (enabled, placed in the scene), keeping the heading.
+  scene.fitPoints = (quiet) => {
+    const pts = state.points.filter(p => p.enabled && p.x != null);
+    if (!pts.length) { if (!quiet) toast('No points in the scene yet', true); return; }
+    if (state.cameraMode) exitCameraMode(true);
+    if (pts.length === 1) { scene.goToPoint(pts[0]); return; }
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const k = mercScale(Solver.mercToLonLat(x0, y0)[1]);
+    const zMid = pts.reduce((a, p) => a + p.z, 0) / pts.length;
+    // pad by 20% and frame at least 60 m across, so markers stay clear of the edges
+    const hw = Math.max((x1 - x0) * 0.6, 30 / k), hh = Math.max((y1 - y0) * 0.6, 30 / k);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const target = [...pts.map(p => pt(p.x, p.y, p.z)),
+      pt(cx - hw, cy - hh, zMid), pt(cx + hw, cy - hh, zMid), pt(cx + hw, cy + hh, zMid), pt(cx - hw, cy + hh, zMid)];
+    const tilt = clamp(view.camera.tilt, 40, 70);
+    view.when(() => view.goTo({ target, heading: view.camera.heading, tilt }, { duration: 1000 })).catch(() => {});
+  };
+  // Fly to about 60 m from a point, keeping the current viewing direction.
+  scene.goToPoint = (p) => {
+    const cam = view.camera, heading = cam.heading, tilt = clamp(cam.tilt, 45, 78);
+    const D = 60, h = heading * D2R, t = tilt * D2R;
+    const k = mercScale(Solver.mercToLonLat(p.x, p.y)[1]);
+    const f = [Math.sin(h) * Math.sin(t), Math.cos(h) * Math.sin(t), -Math.cos(t)];
+    const position = pt(p.x - f[0] * D / k, p.y - f[1] * D / k, p.z - f[2] * D);
+    view.goTo(new Camera({ position, heading, tilt, fov: cam.fov }), { duration: 900 }).catch(() => {});
+  };
+
+  // ---- camera view
+  // The overlay is the photo scaled to fit the view, with its principal point
+  // at the view center. ArcGIS cameras have no roll, so the photo is rotated instead.
+  function overlayGeometry() {
+    const c = state.sol.camera, Vw = view.width, Vh = view.height;
+    const s = Math.min(Vw / state.W, Vh / state.H);
+    const fovDiag = 2 * Math.atan(Math.hypot(Vw, Vh) / 2 / (c.f * s)) * R2D; // ArcGIS camera fov is diagonal
+    return { s, Vw, Vh, fov: clamp(fovDiag, 1, 170), clamped: fovDiag > 170 || fovDiag < 1 };
+  }
+  function layoutOverlay() {
+    if (!state.cameraMode || !solved()) return;
+    const c = state.sol.camera, { s, Vw, Vh } = overlayGeometry();
+    Object.assign($('#overlayImg').style, {
+      width: state.W + 'px', height: state.H + 'px', left: Vw / 2 + 'px', top: Vh / 2 + 'px',
+      transform: `rotate(${c.roll}deg) scale(${s}) translate(${-c.cx}px, ${-c.cy}px)`,
+    });
+  }
+
+  // Clip the mesh in a circle around the solved camera, so walls or a window
+  // frame around the camera spot don't block the view.
+  const CLIP_MAX = 2000; // meters; the slider stops at 100, typed values may go further
+  let clipRadius = 0, clipLast = 10; // clipLast: the radius the label click returns to
+  function circlePolygon(c, r) {
+    const R = r / mercScale(c.lat), ring = [];
+    for (let i = 0; i <= 64; i++) { const a = -i / 64 * 2 * Math.PI; ring.push([c.x + R * Math.cos(a), c.y + R * Math.sin(a)]); }
+    return new Polygon({ rings: [ring], spatialReference: SR });
+  }
+  function applyClip() {
+    const on = state.cameraMode && clipRadius > 0 && solved();
+    const poly = on ? circlePolygon(state.sol.camera, clipRadius) : null;
+    for (const l of [mesh.layer, ...custom.map(c => c.layer)]) {
+      if (!l) continue;
+      guard(() => {
+        if (/integrated-mesh/.test(l.type) && 'modifications' in l) {
+          l.modifications = on ? new SceneModifications([new SceneModification({ geometry: poly, type: 'clip' })]) : null;
+        } else if (l.type === 'scene' && 'filter' in l) {
+          l.filter = on ? { geometries: [poly], spatialRelationship: 'disjoint' } : null;
+        }
+      });
+    }
+  }
+  function setClip(v) {
+    clipRadius = Math.round(clamp(v, 0, CLIP_MAX) * 10) / 10;
+    if (clipRadius > 0) clipLast = clipRadius;
+    const r = $('#clipRadius');
+    r.value = Math.min(clipRadius, +r.max); // above 100 m the slider rests at its end
+    paintRange(r);
+    $('#clipValue').textContent = clipRadius ? `${clipRadius} m` : 'off';
+    applyClip();
+  }
+  $('#clipRadius').addEventListener('input', (e) => setClip(+e.target.value));
+  $('#clipToggle').onclick = () => setClip(clipRadius > 0 ? 0 : clipLast);
+  makeEditable($('#clipValue'), { get: () => clipRadius, set: setClip, min: 0, max: CLIP_MAX });
+  setClip(0);
+
+  const saved = {};       // navigation settings to restore after the camera view
+  let cameraBefore = null; // where the user was before the camera view
+  scene.applyCameraView = (animate) => {
+    if (!solved()) return;
+    setLookMode(false);
+    const c = state.sol.camera;
+    if (!cameraBefore) {
+      cameraBefore = view.camera.clone();
+      guard(() => { saved.collision = view.constraints.collision.enabled; });
+      guard(() => { saved.tiltMode = view.constraints.tilt.mode; saved.tiltMax = view.constraints.tilt.max; });
+      guard(() => { saved.nav = (map.ground.navigationConstraint && map.ground.navigationConstraint.type) || 'stay-above'; });
+    }
+    // let the camera sit exactly where it was solved, even below the mesh or ground surface
+    guard(() => { map.ground.navigationConstraint = { type: 'none' }; });
+    guard(() => { view.constraints.collision.enabled = false; });
+    guard(() => { view.constraints.tilt.mode = 'manual'; view.constraints.tilt.max = 179.9; });
+    applyClip();
+    const { fov, clamped } = overlayGeometry();
+    const cam = new Camera({ position: pt(c.x, c.y, c.z), heading: c.heading, tilt: c.tilt, fov });
+    $('#overlayWrap').hidden = true; // the photo appears once the scene looks through the solved camera
+    const arrived = () => {
+      if (!state.cameraMode) return;
+      const p = view.camera.position, k = mercScale(c.lat);
+      const off = Math.hypot((p.x - c.x) * k, (p.y - c.y) * k, p.z - c.z);
+      layoutOverlay();
+      $('#overlayWrap').hidden = false;
+      if (off > 1) toast(`The scene kept the camera ${off.toFixed(1)} m away from the solved position, so the overlay may be offset. Try Clip mesh.`, true);
+      else if (Math.abs(view.camera.tilt - c.tilt) > 0.5) toast('The scene limited the camera tilt, so the overlay may be offset', true);
+      else if (clamped) toast('Field of view is outside the scene\'s range, so the overlay may be offset', true);
+    };
+    view.goTo(cam, { animate, duration: 1100 }).then(arrived).catch((err) => {
+      if (!state.cameraMode || (err && err.name === 'AbortError')) return; // left, or replaced by a newer move
+      console.warn('goTo failed, setting the camera directly', err);
+      try { view.camera = cam; arrived(); }
+      catch (e2) { console.error(e2); toast(`Could not move the scene camera: ${e2.message || e2}`, true); exitCameraMode(); }
+    });
+  };
+  scene.releaseCameraView = (stay) => {
+    guard(() => { if (saved.collision != null) view.constraints.collision.enabled = saved.collision; });
+    guard(() => {
+      if (!saved.tiltMode) return;
+      view.constraints.tilt.mode = saved.tiltMode;
+      if (saved.tiltMode === 'manual') view.constraints.tilt.max = saved.tiltMax;
+    });
+    guard(() => { if (saved.nav) map.ground.navigationConstraint = { type: saved.nav }; });
+    applyClip();
+    if (stay) {
+      // keep position and direction; the photo's field of view would make
+      // ordinary navigation feel zoomed in or stretched, so restore the default
+      const cam = view.camera.clone(); cam.fov = 55; view.camera = cam;
+    } else if (cameraBefore) {
+      const back = cameraBefore;
+      view.goTo(back, { duration: 800 }).catch(() => { view.camera = back; });
+    }
+    cameraBefore = null;
+  };
+  // the scene stays put while the photo is overlaid
+  const lock = (e) => { if (state.cameraMode) e.stopPropagation(); };
+  ['drag', 'mouse-wheel', 'double-click', 'key-down', 'hold'].forEach(t => view.on(t, lock));
+
+  scene.syncGraphics();
+  scene.syncCamera();
+}
+
+// ======================================================================
+// first paint: every control at its default. Browsers restore form controls
+// on reload, which would disagree with the app's actual state.
+// ======================================================================
 $('#optDim').checked = state.dimHidden;
 $('#optLoupe').checked = state.loupe;
-$('#optPP').checked = state.opts.freePP;
-$('#optK1').checked = state.opts.k1;
-$('#overlayOpacity').value = 55;
-$('#overlayOpacity').dispatchEvent(new Event('input'));
+$('#optLoupe').onchange = (e) => { state.loupe = e.target.checked; requestPhoto(false); };
+setOptions(state.opts);
+setOpacity(55);
 $('#clipRadius').value = 0;
 paintRange($('#clipRadius'));
-$('#optLoupe').onchange = (e) => { state.loupe = e.target.checked; drawPhoto(); };
+$('#opacityValue').setAttribute('aria-label', 'Photo opacity in percent');
+$('#clipValue').setAttribute('aria-label', 'Clip radius in meters');
+document.querySelectorAll('[title]').forEach(adoptTitle);
 renderAll();
 renderSolution();
 })();
