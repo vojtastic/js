@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Scene</title>
+
+  <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.33/"></script>
+
+  <style>
+    html, body, #viewDiv {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Level-of-detail switch */
+    #lodSwitch {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      z-index: 10;
+      display: flex;
+      gap: 2px;
+      padding: 3px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+      font: 500 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+    }
+    #lodSwitch input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #lodSwitch label {
+      padding: 7px 12px;
+      border-radius: 6px;
+      color: #333;
+      cursor: pointer;
+    }
+    #lodSwitch label:hover {
+      background: rgba(0, 0, 0, 0.06);
+    }
+    #lodSwitch input:checked + label {
+      background: #2e6b3f;
+      color: #fff;
+    }
+    #lodSwitch input:focus-visible + label {
+      outline: 2px solid #2e6b3f;
+      outline-offset: 1px;
+    }
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+
+  <div id="lodSwitch" role="radiogroup" aria-label="Level of detail">
+    <input type="radio" name="lod" id="lod-LoD1"  value="LoD1"  checked>
+    <label for="lod-LoD1">LoD1</label>
+    <input type="radio" name="lod" id="lod-LoD2A" value="LoD2A">
+    <label for="lod-LoD2A">LoD2A</label>
+    <input type="radio" name="lod" id="lod-LoD2B" value="LoD2B">
+    <label for="lod-LoD2B">LoD2B</label>
+  </div>
+
+  <script>
+    require([
+      "esri/config",
+      "esri/WebScene",
+      "esri/views/SceneView",
+      "esri/Camera",
+      "esri/core/reactiveUtils"
+    ], (esriConfig, WebScene, SceneView, Camera, reactiveUtils) => {
+
+      // ---- Settings -------------------------------------------------------
+      esriConfig.portalUrl = "https://iprpraha.maps.arcgis.com";
+
+      const WEBSCENE_ID   = "17780bbda24b4419bdf8c23aeb5b3f1b";
+      const HIDE_TITLE    = "body_01-JEN STROMY";
+      const TREES_TITLE   = "body_02_edit_STROMY_3857";
+
+      // assets/<LoD>/tree-01.glb ... tree-06.glb
+      const LODS          = ["LoD1", "LoD2A", "LoD2B"];
+      const DEFAULT_LOD   = "LoD1";
+      const MODEL_COUNT   = 6;
+
+      // LoDs whose models have no colour of their own get a random green tint.
+      // Shades of Tilia × europaea summer foliage, dark to light.
+      const TINTED_LODS   = ["LoD1"];
+      const FOLIAGE_GREENS = ["#34561f", "#466e27", "#58822f", "#6b943a", "#80a548"];
+
+      const HEIGHT_FIELD  = "VÝŠKA_float"; // tree height  -> model Z
+      const CROWN_FIELD   = "KOR_float";   // crown size   -> model X and Y
+      // --------------------------------------------------------------------
+
+      const modelUrls = (lod) =>
+        Array.from({ length: MODEL_COUNT }, (_, i) =>
+          new URL(`./assets/${lod}/tree-${String(i + 1).padStart(2, "0")}.glb`,
+                  document.baseURI).href);
+
+      const webscene = new WebScene({
+        portalItem: { id: WEBSCENE_ID }
+      });
+
+      const view = new SceneView({
+        container: "viewDiv",
+        map: webscene,
+        popupEnabled: false,               // no popups
+        ui: { components: [] }             // no zoom/nav/compass/attribution
+      });
+
+      // Make sure nothing gets added to the UI later
+      view.ui.components = [];
+
+      // ---- Console / debugger access --------------------------------------
+      // In DevTools:  cam()                 -> current camera as plain object
+      //               setCam({ tilt: 60 })  -> change any part of the camera
+      //               setCam(obj, true)     -> same, with animation
+      //               watchCam()            -> log camera while moving; again to stop
+      //               view, webscene        -> full SDK objects
+      const round = (n, d) => Math.round(n * 10 ** d) / 10 ** d;
+
+      const cam = () => {
+        const c = view.camera;
+        const p = c.position;
+        return {
+          position: {
+            x: round(p.x, 2),
+            y: round(p.y, 2),
+            z: round(p.z, 2),
+            spatialReference: { wkid: p.spatialReference.wkid }
+          },
+          heading: round(c.heading, 3),
+          tilt: round(c.tilt, 3),
+          fov: round(c.fov, 2)
+        };
+      };
+
+      // view.camera returns a copy, so editing it in place does nothing:
+      // setCam merges your changes into the current camera and assigns it back.
+      const setCam = (changes = {}, animate = false) => {
+        const cur = cam();
+        const next = new Camera({
+          ...cur,
+          ...changes,
+          position: { type: "point", ...cur.position, ...(changes.position || {}) }
+        });
+        return animate ? view.goTo(next) : (view.camera = next);
+      };
+
+      let camWatch = null;
+      const watchCam = () => {
+        if (camWatch) {
+          camWatch.remove();
+          camWatch = null;
+          return "camera log off";
+        }
+        camWatch = reactiveUtils.watch(
+          () => view.stationary && view.camera,
+          (c) => c && console.log(JSON.stringify(cam()))
+        );
+        return "camera log on (logs when the view stops moving)";
+      };
+
+      Object.assign(window, { view, webscene, cam, setCam, watchCam });
+      // --------------------------------------------------------------------
+
+      // Compare names ignoring case and diacritics (VÝŠKA == vyska)
+      const norm = (s) => String(s)
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .toLowerCase()
+        .trim();
+
+      const findLayer = (title) =>
+        webscene.allLayers.find((l) => norm(l.title) === norm(title));
+
+      // Turn on a layer and every group layer that contains it
+      const showWithParents = (layer) => {
+        let l = layer;
+        while (l && l !== webscene) {
+          l.visible = true;
+          l = l.parent;
+        }
+      };
+
+      // Resolve the real field name in the service (handles diacritics/case)
+      const resolveField = (layer, wanted) => {
+        const f = layer.fields && layer.fields.find((fld) => norm(fld.name) === norm(wanted));
+        if (!f) {
+          console.warn(`Field "${wanted}" not found on "${layer.title}". Available:`,
+                       layer.fields.map((fld) => fld.name));
+          return wanted;
+        }
+        return f.name;
+      };
+
+      // ---- LoD switch ----------------------------------------------------
+      const radios = document.querySelectorAll('#lodSwitch input[name="lod"]');
+
+      // Remember the last choice in this browser (optional convenience)
+      let currentLod = DEFAULT_LOD;
+      try {
+        const saved = localStorage.getItem("treeLod");
+        if (LODS.includes(saved)) currentLod = saved;
+      } catch (e) { /* storage unavailable */ }
+      radios.forEach((r) => { r.checked = r.value === currentLod; });
+
+      let applyLod = () => {};             // set once the tree layer is ready
+
+      radios.forEach((r) => r.addEventListener("change", () => {
+        if (!r.checked) return;
+        currentLod = r.value;
+        try { localStorage.setItem("treeLod", currentLod); } catch (e) {}
+        applyLod(currentLod);
+      }));
+      // --------------------------------------------------------------------
+
+      webscene.when(async () => {
+        // 1) Hide "body_01-JEN STROMY"
+        const hidden = findLayer(HIDE_TITLE);
+        if (hidden) {
+          hidden.visible = false;
+        } else {
+          console.warn(`Layer "${HIDE_TITLE}" not found.`);
+        }
+
+        // 2) Show "body_02_edit_STROMY_3857" with 3D tree models
+        const trees = findLayer(TREES_TITLE);
+        if (!trees) {
+          console.warn(`Layer "${TREES_TITLE}" not found. Layers in scene:`,
+                       webscene.allLayers.map((l) => l.title).toArray());
+          return;
+        }
+
+        await trees.load();
+        showWithParents(trees);
+
+        const heightField = resolveField(trees, HEIGHT_FIELD);
+        const crownField  = resolveField(trees, CROWN_FIELD);
+
+        const treeSymbol = (href) => ({
+          type: "point-3d",
+          symbolLayers: [{
+            type: "object",
+            resource: { href },
+            anchor: "bottom"               // trunk base sits on the point
+          }]
+        });
+
+        // Pseudo-random but stable model index (0..5) from the ObjectID,
+        // so each tree keeps the same model on every reload and in every LoD.
+        const oid = trees.objectIdField;
+        const pickModel = `
+          var id = Number($feature["${oid}"]);
+          var h = Abs(Sin(id * 12.9898 + 78.233) * 43758.5453);
+          return Text(Floor((h - Floor(h)) * ${MODEL_COUNT}));
+        `;
+
+        const visualVariables = [
+          {
+            type: "size",
+            axis: "height",                // model Z
+            field: heightField,
+            valueUnit: "meters"            // attribute value = real size in metres
+          },
+          {
+            type: "size",
+            axis: "width-and-depth",       // model X and Y
+            field: crownField,
+            valueUnit: "meters"
+          }
+        ];
+
+        // Stable random value 0..1 per tree, independent of the model choice
+        const pickShade = `
+          var id = Number($feature["${oid}"]);
+          var h = Abs(Sin(id * 78.233 + 12.9898) * 24634.6345);
+          return h - Floor(h);
+        `;
+
+        const greenTint = {
+          type: "color",
+          valueExpression: pickShade,
+          stops: FOLIAGE_GREENS.map((color, i) => ({
+            value: i / (FOLIAGE_GREENS.length - 1),
+            color
+          }))
+        };
+
+        applyLod = (lod) => {
+          const urls = modelUrls(lod);
+          const vv = TINTED_LODS.includes(lod)
+            ? [...visualVariables, greenTint]
+            : visualVariables;
+          trees.renderer = {
+            type: "unique-value",
+            valueExpression: pickModel,
+            uniqueValueInfos: urls.map((href, i) => ({
+              value: String(i),
+              symbol: treeSymbol(href)
+            })),
+            defaultSymbol: treeSymbol(urls[0]),
+            visualVariables: vv
+          };
+        };
+
+        applyLod(currentLod);
+      });
+    });
+  </script>
+</body>
+</html>
