@@ -639,7 +639,9 @@ textarea.code { width: 100%; min-height: 220px; font: 11.5px/1.5 var(--mono); re
             <pre class="code" id="xFfmpeg">ffmpeg -framerate 30 -i frame_%05d.png -c:v libx264 -pix_fmt yuv420p -crf 16 flypath.mp4</pre>
           </div></li>
         <li><h3>If the view isn't found</h3>
-          <div class="col"><p>Apps built with a bundler hide the view object. If you can edit the app, add <code>window.__view = view;</code> after the view is created, or load <code>flypath.js</code> from the <b>Code module</b> tab and call <code>FlyPathPlayer.play(view, path)</code> yourself.</p></div></li>
+          <div class="col"><p>The player looks for the 3D view by itself (map components, <code>view</code>, <code>app.view</code> and similar). If it says it couldn't find it, but you can reach the view in the console, point the player to it, then play as usual:</p>
+            <pre class="code">flypath.use(app.view)</pre>
+            <p>If the view can't be reached from the console at all (apps built with a bundler often hide it), pause the app in the debugger where <code>view</code> exists and run <code>window.__view = view</code>, then paste the player again. If you can edit the app, load <code>flypath.js</code> from the <b>Code module</b> tab and call <code>FlyPathPlayer.play(view, path)</code> yourself.</p></div></li>
       </ol>
     </div>
     <div class="body" data-xpane="render" hidden>
@@ -1545,10 +1547,28 @@ var FlyPathPlayer = (function () {
   }
 
   // Locate the SceneView in a page you did not write (Map Components, CDN or AMD apps).
+  // A 3D view itself, or an app object holding one (app.view, app.sceneView, ...). "given" is for a view the user
+  // pointed to explicitly (window.__view, flypath.use): then anything with a camera is accepted.
+  function asSceneView(o, given) {
+    var ok = function (v) { return v && typeof v === "object" && v.camera && (given ? true : v.type === "3d" && typeof v.goTo === "function"); };
+    try {
+      if (ok(o)) return o;
+      var keys = ["view", "sceneView", "activeView", "mapView"];
+      for (var i = 0; o && i < keys.length; i++) if (ok(o[keys[i]])) return o[keys[i]];
+    } catch (e) {}
+    return null;
+  }
+  // Global variables an app commonly keeps its view in. "const app = ..." at the top of a script isn't a property of
+  // window, so these names are also looked up as plain global names.
+  var VIEW_NAMES = ["view", "sceneView", "app", "application", "viewer", "scene", "mapView", "map", "APP", "App"];
   async function findView() {
-    if (window.__view && window.__view.camera) return window.__view;
+    var v = asSceneView(window.__view, true);
+    if (v) return v;
     var els = document.querySelectorAll("arcgis-scene, arcgis-map");
-    for (var i = 0; i < els.length; i++) { var v = els[i].view; if (v && v.type === "3d") return v; }
+    for (var i = 0; i < els.length; i++) { v = els[i].view; if (v && v.type === "3d") return v; }
+    for (var n = 0; n < VIEW_NAMES.length; n++) {
+      try { v = asSceneView((0, eval)("typeof " + VIEW_NAMES[n] + " !== 'undefined' ? " + VIEW_NAMES[n] + " : null")); if (v) return v; } catch (e) {}
+    }
     try {
       if (window.$arcgis && window.$arcgis.import) {
         var mods = await window.$arcgis.import(["@arcgis/core/views/View.js"]);
@@ -1567,20 +1587,20 @@ var FlyPathPlayer = (function () {
         if (f2) return f2;
       }
     } catch (e) {}
-    var keys = Object.keys(window);
+    // last resort: every global variable. Only plain data properties are read, so browser getters (some of them
+    // deprecated and noisy, like window.fullScreen in Firefox) are never touched.
+    var keys = Object.getOwnPropertyNames(window);
     for (var k = 0; k < keys.length; k++) {
       try {
-        var o = window[keys[k]];
-        if (o && typeof o === "object") {
-          if (o.type === "3d" && o.camera && typeof o.goTo === "function") return o;
-          if (o.view && o.view.type === "3d" && o.view.camera) return o.view;
-        }
+        var d = Object.getOwnPropertyDescriptor(window, keys[k]);
+        if (!d || !("value" in d)) continue;
+        v = asSceneView(d.value); if (v) return v;
       } catch (e) {}
     }
-    throw new Error("Flypath: no SceneView found. Expose it first (for example window.__view = view) and run again.");
+    throw new Error("no 3D view found on this page");
   }
 
-  return { play: play, stopAll: stopAll, renderFrames: renderFrames, goToStart: goToStart, findView: findView,
+  return { play: play, stopAll: stopAll, renderFrames: renderFrames, goToStart: goToStart, findView: findView, asSceneView: asSceneView,
            applyCamera: applyCamera, cameraFor: cameraFor, positionFor: positionFor, isLocalMercator: isLocalMercator, tiltToView: tiltToView, tiltFromView: tiltFromView, settle: settle, hideUI: hideUI,
            applyTracks: applyTracks, bind: bind, unlink: unlink, pick: pick, trackStatus: trackStatus, findControl: findControl, setControl: setControl };
 })();
@@ -3459,29 +3479,41 @@ function consoleSnippet() {
 (async () => {
 ${ENGINE_SRC}
 const PATH = ${exportJSON(false)};
-let view;
-try { view = await FlyPathPlayer.findView(); } catch (e) { console.error(e.message); return; }
-const engine = FlyPath.build(PATH);
+const engine = FlyPath.build(PATH), STYLE = "font-weight:bold;color:#f2a93b";
 if (window.FlyPathPlayer && window.FlyPathPlayer.stopAll) try { window.FlyPathPlayer.stopAll(); } catch (e) {} // a path pasted earlier stops
 window.FlyPath = FlyPath; window.FlyPathPlayer = FlyPathPlayer;
+let view = null;
+const need = () => { if (!view) throw new Error("Flypath: no 3D view yet. Run flypath.use(yourView) first, for example flypath.use(app.view)."); return view; };
 window.flypath = {
-  view, path: PATH, engine,
-  play: (o) => FlyPathPlayer.play(view, PATH, Object.assign({ hideUI: true }, o)),
+  get view() { return view; }, path: PATH, engine,
+  // tell the player which view to drive when it can't find it by itself
+  use: (v) => {
+    const sv = FlyPathPlayer.asSceneView(v, true);
+    if (!sv) { console.error("Flypath: that isn't a 3D SceneView (or an object with a .view that is one)."); return false; }
+    view = sv; ready(); return true;
+  },
+  play: (o) => FlyPathPlayer.play(need(), PATH, Object.assign({ hideUI: true }, o)),
   stop: () => FlyPathPlayer.stopAll(),
-  render: (o) => FlyPathPlayer.renderFrames(view, PATH, Object.assign({ fps: ${doc.settings.fps || 30} }, o)),
-  goToStart: () => FlyPathPlayer.goToStart(view, PATH),
+  render: (o) => FlyPathPlayer.renderFrames(need(), PATH, Object.assign({ fps: ${doc.settings.fps || 30} }, o)),
+  goToStart: () => FlyPathPlayer.goToStart(need(), PATH),
   pick: (name) => FlyPathPlayer.pick(name),
   bind: (name, target) => FlyPathPlayer.bind(name, target),
   unlink: (name) => FlyPathPlayer.unlink(name),
   tracks: () => console.table(FlyPathPlayer.trackStatus(engine)),
   cameraAt: (t) => engine.cameraAt(t)
 };
-const el = view.container, w = el ? el.clientWidth : 0, h = el ? el.clientHeight : 0;
-console.log("%cFlypath ready", "font-weight:bold;color:#f2a93b", "· " + PATH.name + " · " + engine.duration.toFixed(1) + " s · view " + w + "×" + h + (w && h ? " (" + (w / h).toFixed(3) + ":1, path was made at ${(frameAspect()).toFixed(3)}:1)" : ""));
-console.log("flypath.play({ delay: 3${engine.closed ? ", loop: true" : ""} })   flypath.stop()   flypath.render({ fps: ${doc.settings.fps || 30}, width: 1920, height: 1080 })");
-if (engine.tracks.length) {
-  console.log("Tracks in this path. To link a track by clicking its control: await flypath.pick(\\"Track name\\")");
-  console.table(FlyPathPlayer.trackStatus(engine));
+function ready() {
+  const el = view.container, w = el ? el.clientWidth : 0, h = el ? el.clientHeight : 0;
+  console.log("%cFlypath ready", STYLE, "· " + PATH.name + " · " + engine.duration.toFixed(1) + " s · view " + w + "×" + h + (w && h ? " (" + (w / h).toFixed(3) + ":1, path was made at ${(frameAspect()).toFixed(3)}:1)" : ""));
+  console.log("flypath.play({ delay: 3${engine.closed ? ", loop: true" : ""} })   flypath.stop()   flypath.render({ fps: ${doc.settings.fps || 30}, width: 1920, height: 1080 })");
+  if (engine.tracks.length) {
+    console.log("Tracks in this path. To link a track by clicking its control: await flypath.pick(\\"Track name\\")");
+    console.table(FlyPathPlayer.trackStatus(engine));
+  }
+}
+try { view = await FlyPathPlayer.findView(); ready(); }
+catch (e) {
+  console.log("%cFlypath loaded, but it couldn't find the 3D view by itself.", STYLE, "\\nIf you can reach the view in this console (for example as app.view), run:\\n  flypath.use(app.view)\\nthen flypath.play() as usual.");
 }
 })();
 `;
