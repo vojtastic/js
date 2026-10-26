@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Palackého most – 3D</title>
+
+  <!-- ArcGIS Maps SDK for JavaScript 5.1 (Gaussian splat layers need 5.0+) -->
+  <script type="module" src="https://js.arcgis.com/5.1/"></script>
+
+  <style>
+    :root {
+      --pill-bg: rgba(18, 20, 24, 0.52);
+      --pill-border: rgba(255, 255, 255, 0.14);
+      --pill-text: rgba(255, 255, 255, 0.78);
+      --pill-text-hover: #fff;
+      --thumb-bg: rgba(255, 255, 255, 0.94);
+      --thumb-text: #111317;
+      --ease: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #0e1013;
+    }
+
+    arcgis-scene {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      /* hide the blue focus frame shown while interacting with the scene */
+      --arcgis-view-color-focus: transparent;
+    }
+    /* fallback for SDK builds that ignore the variable above */
+    .esri-view .esri-view-surface:focus::after,
+    .esri-view .esri-view-surface:focus-visible::after {
+      outline: none !important;
+    }
+
+    /* ---------- layer switch ---------- */
+    .switch {
+      position: fixed;
+      left: 50%;
+      bottom: calc(18px + env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 10;
+
+      display: flex;
+      gap: 2px;
+      padding: 3px;
+      border-radius: 999px;
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-border);
+      backdrop-filter: blur(16px) saturate(160%);
+      -webkit-backdrop-filter: blur(16px) saturate(160%);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+
+      font: 500 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      letter-spacing: 0.01em;
+      user-select: none;
+      -webkit-user-select: none;
+
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s var(--ease);
+    }
+    .switch.ready {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .switch button {
+      position: relative;
+      z-index: 1;
+      appearance: none;
+      border: 0;
+      margin: 0;
+      padding: 7px 13px;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--pill-text);
+      font: inherit;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: color 0.25s var(--ease);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .switch button:hover { color: var(--pill-text-hover); }
+    .switch button[aria-checked="true"] { color: var(--thumb-text); }
+    .switch button:focus-visible {
+      outline: 2px solid rgba(255, 255, 255, 0.7);
+      outline-offset: 1px;
+    }
+
+    /* sliding highlight behind the active option */
+    .switch .thumb {
+      position: absolute;
+      z-index: 0;
+      top: 0;
+      left: 0;
+      border-radius: 999px;
+      background: var(--thumb-bg);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+      transition:
+        transform 0.42s var(--ease),
+        width 0.42s var(--ease),
+        height 0.42s var(--ease);
+    }
+    .switch.no-anim .thumb { transition: none; }
+
+    /* narrow screens: stack the options vertically */
+    @media (max-width: 640px) {
+      .switch {
+        flex-direction: column;
+        border-radius: 18px;
+        bottom: calc(14px + env(safe-area-inset-bottom));
+      }
+      .switch button,
+      .switch .thumb { border-radius: 15px; }
+      .switch button { padding: 9px 16px; text-align: center; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .switch, .switch .thumb, .switch button { transition: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Original scene: https://iprpraha.maps.arcgis.com/home/webscene/viewer.html?webscene=823483adbeff4f5f887b078c8e2a17d3 -->
+  <arcgis-scene
+    item-id="823483adbeff4f5f887b078c8e2a17d3"
+    hide-attribution
+    popup-disabled
+  ></arcgis-scene>
+
+  <div class="switch no-anim" role="radiogroup" aria-label="Vrstva">
+    <span class="thumb" aria-hidden="true"></span>
+  </div>
+
+  <script type="module">
+    // Group in the web scene that holds the exclusive (radio) layers
+    const GROUP_TITLE = "Palackého most";
+
+    // Layer titles exactly as in the web scene, top-to-bottom as the Scene Viewer lists them.
+    // Used as a fallback/ordering hint; the app reads the real layers from the scene.
+    const LAYER_TITLES = [
+      "Gaussian Splats",
+      "3D Mesh Model",
+      "Generalizovaný 3D model (bílý)",
+      "Generalizovaný 3D model (barevný)"
+    ];
+    const WHITE_TITLE = "Generalizovaný 3D model (bílý)";
+    const COLOR_TITLE = "Generalizovaný 3D model (barevný)";
+
+    const sceneEl = document.querySelector("arcgis-scene");
+    const switchEl = document.querySelector(".switch");
+    const thumb = switchEl.querySelector(".thumb");
+
+    await customElements.whenDefined("arcgis-scene");
+    await sceneEl.viewOnReady();
+
+    const map = sceneEl.map;
+    const group =
+      map.allLayers.find((l) => l.type === "group" && l.title === GROUP_TITLE) ??
+      map.allLayers.find((l) => l.type === "group");
+
+    // Group.layers is bottom-to-top; reverse to match the Scene Viewer's layer list
+    let layers = group ? group.layers.toArray().reverse() : [];
+    if (!layers.length) {
+      layers = LAYER_TITLES.map((t) => map.allLayers.find((l) => l.title === t)).filter(Boolean);
+    }
+
+    // "bílý" and "barevný" are copies of the same model with different colours.
+    // Turning a layer off unloads its geometry, and changing a renderer or opacity
+    // makes the SDK rebuild it, so each of those leaves a gap of a second or more.
+    // Instead, while either of the two is selected, BOTH stay visible (both stay
+    // loaded) and a layer-view filter hides every feature of the inactive one.
+    // A filter change is applied on the GPU, so the swap shows up in the next frame.
+    const whiteLayer = layers.find((l) => l.title === WHITE_TITLE);
+    const colorLayer = layers.find((l) => l.title === COLOR_TITLE);
+    const pair = whiteLayer && colorLayer ? [whiteLayer, colorLayer] : null;
+    const pairViews = new Map();
+    if (pair) {
+      if (group) group.visibilityMode = "independent"; // allow both to be on at once
+      const view = sceneEl.view;
+      const lvs = await Promise.all(pair.map((l) => view.whenLayerView(l)));
+      pair.forEach((l, i) => pairViews.set(l, lvs[i]));
+    }
+
+    const buttons = layers.map((layer, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = layer.title;
+      btn.setAttribute("role", "radio");
+      btn.addEventListener("click", () => select(i));
+      switchEl.appendChild(btn);
+      return btn;
+    });
+
+    let activeIndex = Math.max(0, layers.findIndex((l) => l.visible));
+
+    function moveThumb() {
+      const btn = buttons[activeIndex];
+      if (!btn) return;
+      thumb.style.width = `${btn.offsetWidth}px`;
+      thumb.style.height = `${btn.offsetHeight}px`;
+      thumb.style.transform = `translate(${btn.offsetLeft}px, ${btn.offsetTop}px)`;
+    }
+
+    function select(index, { focus = false } = {}) {
+      activeIndex = index;
+      const active = layers[index];
+      const pairActive = Boolean(pair?.includes(active));
+
+      // Set filters before visibility, so the hidden copy never flashes
+      if (pairActive) {
+        pairViews.forEach((lv, layer) => {
+          lv.filter = layer === active ? null : { where: "1=0" };
+        });
+      }
+
+      layers.forEach((layer) => {
+        layer.visible = layer === active || (pairActive && pair.includes(layer));
+      });
+      if (group) group.visible = true;
+      buttons.forEach((b, i) => {
+        const on = i === index;
+        b.setAttribute("aria-checked", String(on));
+        b.tabIndex = on ? 0 : -1;
+      });
+      if (focus) buttons[index].focus();
+      moveThumb();
+    }
+
+    // Arrow-key navigation, as in a native radio group
+    switchEl.addEventListener("keydown", (e) => {
+      const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+      if (e.key in keys) {
+        e.preventDefault();
+        select((activeIndex + keys[e.key] + buttons.length) % buttons.length, { focus: true });
+      } else if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        select(e.key === "Home" ? 0 : buttons.length - 1, { focus: true });
+      }
+    });
+
+    // Keep the highlight aligned when the layout changes (resize, font load, orientation)
+    new ResizeObserver(moveThumb).observe(switchEl);
+
+    select(activeIndex);
+    switchEl.classList.add("ready");
+    requestAnimationFrame(() => switchEl.classList.remove("no-anim"));
+  </script>
+</body>
+</html>
